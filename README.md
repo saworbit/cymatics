@@ -8,7 +8,7 @@ Spiritual successor to [Plasma Pong](https://en.wikipedia.org/wiki/Plasma_Pong) 
 
 ![Godot 4.7](https://img.shields.io/badge/Godot-4.7.2-478cbf?logo=godotengine&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![CI](https://github.com/saworbit/thats-a-paddlin/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/saworbit/cymatics/actions/workflows/ci.yml/badge.svg)
 
 ## Play
 
