@@ -8,6 +8,7 @@ signal collected(kind: Kind, hitter_id: int, ball: Ball)
 var kind: Kind = Kind.MULTIBALL
 var _life := 11.0
 var _bob := 0.0
+var _consumed := false
 var _visual: ColorRect
 var _label: Label
 
@@ -88,12 +89,17 @@ func _process(delta: float) -> void:
 		_visual.position.y = -44.0 + sin(_bob) * 6.0
 		_visual.rotation += delta * 1.8
 	if _life <= 0.0:
+		set_deferred("monitoring", false)
 		queue_free()
 
 func _on_body_entered(body: Node) -> void:
+	if _consumed:
+		return
 	if body is Ball:
 		var b := body as Ball
 		if b.is_scored or b.is_serving:
 			return
+		_consumed = true
 		collected.emit(kind, b.last_hitter_id, b)
+		set_deferred("monitoring", false)
 		queue_free()

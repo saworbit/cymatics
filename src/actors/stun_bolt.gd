@@ -6,6 +6,7 @@ signal hit_paddle(paddle: Paddle)
 var team_id := 0
 var velocity := Vector2.ZERO
 var _life := 1.1
+var _consumed := false
 var _visual: ColorRect
 
 func _ready() -> void:
@@ -41,12 +42,17 @@ func _physics_process(delta: float) -> void:
 	global_position += velocity * delta
 	_life -= delta
 	if _life <= 0.0 or global_position.x < -40.0 or global_position.x > 1960.0:
+		set_deferred("monitoring", false)
 		queue_free()
 
 func _on_body_entered(body: Node) -> void:
+	if _consumed:
+		return
 	if body is Paddle:
 		var p := body as Paddle
 		if p.player_id == team_id:
 			return
+		_consumed = true
 		hit_paddle.emit(p)
+		set_deferred("monitoring", false)
 		queue_free()
