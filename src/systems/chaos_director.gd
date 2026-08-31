@@ -97,10 +97,16 @@ func _spawn_powerup() -> void:
 		PowerupScript.Kind.GROW,
 		PowerupScript.Kind.TINY,
 		PowerupScript.Kind.STUN_ARM,
-		PowerupScript.Kind.STUN_ARM,
 		PowerupScript.Kind.MAGNET,
 		PowerupScript.Kind.FIREBALL,
 		PowerupScript.Kind.HYPER,
+		PowerupScript.Kind.BALL_TRI,
+		PowerupScript.Kind.BALL_CUBE,
+		PowerupScript.Kind.BALL_STAR,
+		PowerupScript.Kind.BALL_RUGBY,
+		PowerupScript.Kind.PADDLE_SCOOP,
+		PowerupScript.Kind.PADDLE_WEDGE,
+		PowerupScript.Kind.PADDLE_FORTRESS,
 	]
 	var kind: int = kinds[randi() % kinds.size()]
 	var pos := Vector2(randf_range(720.0, 1200.0), randf_range(220.0, 860.0))
@@ -138,7 +144,10 @@ func _on_powerup_collected(kind: int, hitter_id: int, ball: Ball) -> void:
 
 	match kind:
 		PowerupScript.Kind.MULTIBALL:
-			_split_multiball.call_deferred(ball)
+			if ball != null:
+				_split_multiball.call_deferred(ball)
+			elif primary != null:
+				_split_multiball.call_deferred(primary)
 		PowerupScript.Kind.GROW:
 			if self_p:
 				self_p.apply_size_mod(1.55, 8.0)
@@ -152,7 +161,9 @@ func _on_powerup_collected(kind: int, hitter_id: int, ball: Ball) -> void:
 			if self_p:
 				self_p.apply_magnet(8.0)
 		PowerupScript.Kind.FIREBALL:
-			ball.ignite_fireball(8.0)
+			var tb: Ball = ball if ball != null else primary
+			if tb:
+				tb.ignite_fireball(8.0)
 			for extra in extra_balls:
 				if is_instance_valid(extra):
 					extra.ignite_fireball(8.0)
@@ -161,8 +172,34 @@ func _on_powerup_collected(kind: int, hitter_id: int, ball: Ball) -> void:
 			Engine.time_scale = 1.18
 			if self_p:
 				self_p.apply_size_mod(1.2, 4.0)
-			if ball:
-				ball.ignite_fireball(4.0)
+			var tb: Ball = ball if ball != null else primary
+			if tb:
+				tb.ignite_fireball(4.0)
+		PowerupScript.Kind.BALL_TRI:
+			var tb: Ball = ball if ball != null else primary
+			if tb:
+				tb.mutate_shape(Ball.Shape.TRIANGLE, 9.0)
+		PowerupScript.Kind.BALL_CUBE:
+			var tb: Ball = ball if ball != null else primary
+			if tb:
+				tb.mutate_shape(Ball.Shape.CUBE, 9.0)
+		PowerupScript.Kind.BALL_STAR:
+			var tb: Ball = ball if ball != null else primary
+			if tb:
+				tb.mutate_shape(Ball.Shape.STAR, 9.0)
+		PowerupScript.Kind.BALL_RUGBY:
+			var tb: Ball = ball if ball != null else primary
+			if tb:
+				tb.mutate_shape(Ball.Shape.RUGBY, 9.0)
+		PowerupScript.Kind.PADDLE_SCOOP:
+			if self_p:
+				self_p.mutate_shape(Paddle.Shape.SCOOP, 9.0)
+		PowerupScript.Kind.PADDLE_WEDGE:
+			if self_p:
+				self_p.mutate_shape(Paddle.Shape.WEDGE, 9.0)
+		PowerupScript.Kind.PADDLE_FORTRESS:
+			if self_p:
+				self_p.mutate_shape(Paddle.Shape.FORTRESS, 9.0)
 	powerup_collected.emit(kind, owner_id)
 
 func _split_multiball(source: Ball) -> void:

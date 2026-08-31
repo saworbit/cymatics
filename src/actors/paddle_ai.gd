@@ -6,14 +6,17 @@ extends Node
 @export var enabled := true
 @export var reaction_delay := 0.07
 @export var difficulty := 1.0
+@export var aggression := 0.55
 
 var paddle: Paddle
+var twin_paddle: Paddle
 var ball: Ball
 var game_mgr: GameManager
 var chaos
 
 var _timer := 0.0
 var _target_pos := Vector2(1720, 540)
+var _twin_target_pos := Vector2(1720, 320)
 var _serve_delay := 0.8
 var _intent_blast := false
 var _intent_shoot := false
@@ -43,7 +46,7 @@ func _physics_process(delta: float) -> void:
 	if absf(to_target.x) > 22.0:
 		desired.x = signf(to_target.x)
 
-	var spd := paddle.speed * clampf(0.72 + difficulty * 0.28, 0.65, 1.15)
+	var spd := paddle.speed * clampf(0.72 + difficulty * 0.28, 0.65, 1.25)
 	paddle.velocity = paddle.velocity.move_toward(desired * spd, 7000.0 * delta)
 	paddle.move_and_slide()
 	paddle.global_position.x = clampf(paddle.global_position.x, paddle.min_x, paddle.max_x)
@@ -51,6 +54,21 @@ func _physics_process(delta: float) -> void:
 
 	paddle.is_shooting = _intent_shoot
 	paddle.is_sucking = _intent_suck
+
+	# Twin Paddle coordination for Hydra Stage
+	if twin_paddle != null and is_instance_valid(twin_paddle) and twin_paddle.stun_time <= 0.0:
+		var twin_to := _twin_target_pos - twin_paddle.global_position
+		var twin_des := Vector2.ZERO
+		if absf(twin_to.y) > 12.0:
+			twin_des.y = signf(twin_to.y)
+		if absf(twin_to.x) > 22.0:
+			twin_des.x = signf(twin_to.x)
+		twin_paddle.velocity = twin_paddle.velocity.move_toward(twin_des * spd, 7000.0 * delta)
+		twin_paddle.move_and_slide()
+		twin_paddle.global_position.x = clampf(twin_paddle.global_position.x, paddle.min_x, paddle.max_x)
+		twin_paddle.global_position.y = clampf(twin_paddle.global_position.y, paddle.min_y, paddle.max_y)
+		twin_paddle.is_shooting = _intent_shoot
+		twin_paddle.is_sucking = _intent_suck
 
 	if _intent_blast and paddle.blast_cooldown <= 0.0:
 		_intent_blast = false
@@ -99,6 +117,13 @@ func _evaluate_tactics() -> void:
 		predicted_y = _fold_walls(predicted_y)
 		predicted_y += randf_range(-error, error)
 		_target_pos = Vector2(paddle.max_x - 36.0, clampf(predicted_y, 110.0, 970.0))
+		if twin_paddle != null and is_instance_valid(twin_paddle):
+			if predicted_y < 540.0:
+				_twin_target_pos = Vector2(paddle.max_x - 36.0, clampf(predicted_y, 110.0, 520.0))
+				_target_pos = Vector2(paddle.min_x + 50.0, 780.0)
+			else:
+				_target_pos = Vector2(paddle.max_x - 36.0, clampf(predicted_y, 560.0, 970.0))
+				_twin_target_pos = Vector2(paddle.min_x + 50.0, 300.0)
 
 		# Build rallies: suction slingshots, stream deflections, and tactical blasts
 		if paddle.armed_time > 0.0 and vertical < 90.0 and randf() < 0.35:
@@ -114,6 +139,8 @@ func _evaluate_tactics() -> void:
 			_intent_shoot = randf() < 0.42
 	else:
 		_target_pos = Vector2(paddle.min_x + 70.0, clampf(ball_pos.y + randf_range(-error, error), 180.0, 900.0))
+		if twin_paddle != null and is_instance_valid(twin_paddle):
+			_twin_target_pos = Vector2(paddle.min_x + 70.0, 300.0)
 		if ball_pos.x < paddle.global_position.x and vertical < 150.0 and ball_vel.x < -80.0:
 			_intent_shoot = true
 		else:

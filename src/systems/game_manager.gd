@@ -12,6 +12,7 @@ signal milestone_reached(milestone_name: String)
 signal callout(text: String, color: Color)
 signal ai_toggled(enabled: bool)
 signal zen_mode_toggled(enabled: bool)
+signal gauntlet_mode_toggled(enabled: bool)
 signal serving_started(server_id: int)
 signal impact_pulse(amount: float)
 
@@ -30,6 +31,7 @@ var next_server := 0
 
 var is_ai_enabled := true
 var is_zen_mode := false
+var is_gauntlet_mode := false
 var _serve_token := 0
 
 var ball: Ball
@@ -39,6 +41,7 @@ var paddle_ai: PaddleAI
 var vfx_mgr: VFXManager
 var audio_mgr: AudioManager
 var chaos
+var tournament_mgr: TournamentManager
 
 func setup_references(p_ball: Ball, p_p1: Paddle, p_p2: Paddle, p_ai: PaddleAI, p_vfx: VFXManager, p_audio: AudioManager) -> void:
 	ball = p_ball
@@ -67,7 +70,6 @@ func setup_references(p_ball: Ball, p_p1: Paddle, p_p2: Paddle, p_ai: PaddleAI, 
 	paddle_right.super_ready.connect(func(): _banner("RESONANCE READY", paddle_right.team_color))
 	paddle_left.resonance_fired.connect(func(_p: Vector2): _banner("RESONANCE", paddle_left.team_color))
 	paddle_right.resonance_fired.connect(func(_p: Vector2): _banner("RESONANCE", paddle_right.team_color))
-
 	paddle_left.stunned.connect(func(_d: float): _banner("STUNNED", Color(0.7, 0.9, 1.0)))
 	paddle_right.stunned.connect(func(_d: float): _banner("STUNNED", Color(0.7, 0.9, 1.0)))
 	paddle_left.armed.connect(func(): _banner("CANNON ARMED", paddle_left.team_color))
@@ -89,6 +91,19 @@ func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("zen_mode_toggle"):
 		is_zen_mode = not is_zen_mode
 		zen_mode_toggled.emit(is_zen_mode)
+
+	if event.is_action_pressed("toggle_gauntlet"):
+		is_gauntlet_mode = not is_gauntlet_mode
+		if is_gauntlet_mode:
+			if tournament_mgr != null:
+				tournament_mgr.start_tournament()
+			_banner("GAUNTLET MODE", Color(1.0, 0.85, 0.2))
+		else:
+			if tournament_mgr != null:
+				tournament_mgr.stop_tournament()
+			_banner("ARCADE MODE", Color(0.2, 0.9, 1.0))
+		gauntlet_mode_toggled.emit(is_gauntlet_mode)
+		restart_match()
 
 func start_serve(server_id: int) -> void:
 	if current_state == State.MATCH_OVER:
@@ -249,6 +264,8 @@ func _maybe_finish_set() -> bool:
 			vfx_mgr.flash_screen(Color.WHITE, 0.4, 0.35)
 		if audio_mgr != null:
 			audio_mgr.trigger_goal(match_winner, true)
+		if is_gauntlet_mode and tournament_mgr != null:
+			tournament_mgr.on_match_won(match_winner)
 		return true
 	return true
 

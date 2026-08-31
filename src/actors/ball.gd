@@ -9,11 +9,13 @@ signal cymatic_lock_entered
 signal near_miss(side: int, pos: Vector2)
 signal served(dir: Vector2)
 
-@export var base_speed := 720.0
+enum Shape { ROUND, TRIANGLE, CUBE, STAR, RUGBY }
+
+@export var radius := 18.0
+@export var base_speed := 820.0
 @export var max_speed := 2100.0
 @export var min_speed := 560.0
-@export var bounce_damping := 0.99
-@export var radius := 18.0
+@export var bounce_damping := 1.0
 
 var spin := 0.0
 var rally_hits := 0
@@ -23,6 +25,9 @@ var is_scored := false
 var is_serving := false
 var is_clone := false
 var fireball_time := 0.0
+var shape_type: Shape = Shape.ROUND
+var shape_time := 0.0
+var shape_angle := 0.0
 var serve_paddle: Paddle = null
 var last_hitter_id := -1
 var touch_mask := 0
@@ -190,6 +195,32 @@ func ignite_fireball(duration: float) -> void:
 	fireball_time = maxf(fireball_time, duration)
 	emote(9, duration, "HOT")
 
+func mutate_shape(new_shape: Shape, duration: float) -> void:
+	shape_type = new_shape
+	shape_time = maxf(shape_time, duration)
+	_squash = Vector2(1.55, 0.65)
+	var col := Color(1.0, 0.9, 0.3)
+	var mood_line := "MORPH"
+	match new_shape:
+		Shape.TRIANGLE:
+			col = Color(0.3, 1.0, 0.8)
+			mood_line = "PRISM"
+		Shape.CUBE:
+			col = Color(0.9, 0.4, 1.0)
+			mood_line = "CUBE"
+		Shape.STAR:
+			col = Color(1.0, 0.85, 0.15)
+			mood_line = "STAR"
+		Shape.RUGBY:
+			col = Color(1.0, 0.35, 0.65)
+			mood_line = "BLOB"
+	if vfx_mgr != null:
+		vfx_mgr.spawn_hit_burst(global_position, col, 1.8)
+		vfx_mgr.spawn_shockwave(global_position, col, 320.0, 0.35)
+	if audio_mgr != null:
+		audio_mgr.trigger_sting(580.0, 0.4)
+	emote(3, duration, mood_line)
+
 func hold_for_serve(p: Paddle) -> void:
 	is_serving = true
 	is_scored = false
@@ -211,6 +242,9 @@ func hold_for_serve(p: Paddle) -> void:
 	_trail_pts.clear()
 	_squash = Vector2.ONE
 	fireball_time = 0.0
+	shape_type = Shape.ROUND
+	shape_time = 0.0
+	shape_angle = 0.0
 	if collision_shape:
 		collision_shape.set_deferred("disabled", true)
 	_update_visuals()
@@ -250,6 +284,9 @@ func reset_ball(start_pos: Vector2, dir: Vector2) -> void:
 	_trail_pts.clear()
 	_squash = Vector2.ONE
 	fireball_time = 0.0
+	shape_type = Shape.ROUND
+	shape_time = 0.0
+	shape_angle = 0.0
 	if collision_shape:
 		collision_shape.set_deferred("disabled", false)
 	_update_visuals()
@@ -260,6 +297,13 @@ func _physics_process(delta: float) -> void:
 
 	if fireball_time > 0.0:
 		fireball_time -= delta
+
+	if shape_time > 0.0:
+		shape_time -= delta
+		if shape_time <= 0.0 and shape_type != Shape.ROUND:
+			shape_type = Shape.ROUND
+			_squash = Vector2(1.3, 0.7)
+	shape_angle += (spin * 14.0 + velocity.x * 0.003) * delta
 
 	if is_serving:
 		_process_serve(delta)
@@ -318,13 +362,22 @@ func _integrate_flight(delta: float) -> void:
 		spin = clampf(spin + curl * (0.85 * delta), -1.0, 1.0)
 		spin = move_toward(spin, 0.0, delta * 0.12)
 		var mag_dir := Vector2(-heading.y, heading.x)
-		velocity += mag_dir * (spin * 620.0 * delta)
+		var lift_mult := 1.75 if shape_type == Shape.STAR else 1.0
+		velocity += mag_dir * (spin * 620.0 * lift_mult * delta)
 		if absf(curl) > 1.4:
 			velocity += mag_dir * (signf(curl) * 280.0 * delta)
 
 		# 3. Bow shock and fluid wake injection
 		var wake_color := Color(1.0, 0.85, 0.2, 0.85)
-		if fireball_time > 0.0:
+		if shape_type == Shape.TRIANGLE:
+			wake_color = Color(0.3, 1.0, 0.8, 0.9)
+		elif shape_type == Shape.CUBE:
+			wake_color = Color(0.9, 0.4, 1.0, 0.9)
+		elif shape_type == Shape.STAR:
+			wake_color = Color(1.0, 0.85, 0.15, 0.95)
+		elif shape_type == Shape.RUGBY:
+			wake_color = Color(1.0, 0.35, 0.65, 0.9)
+		elif fireball_time > 0.0:
 			wake_color = Color(1.0, 0.25, 0.04, 1.0)
 		elif is_in_cymatic_lock:
 			wake_color = Color(1.0, 1.0, 1.0, 1.0)
@@ -337,7 +390,7 @@ func _integrate_flight(delta: float) -> void:
 			fluid_sim.inject_force(global_position, wake_force, wake_rad, wake_color)
 
 			# Fast ball generates flanking von Kármán vortex eddies
-			if speed > 850.0:
+			if speed > 850.0 or shape_type == Shape.STAR:
 				var flank_offset := mag_dir * (radius * 1.5)
 				fluid_sim.inject_vortex(global_position + flank_offset, 3.5 * (speed / 1000.0), wake_rad * 0.8, wake_color)
 				fluid_sim.inject_vortex(global_position - flank_offset, -3.5 * (speed / 1000.0), wake_rad * 0.8, wake_color)
@@ -363,8 +416,24 @@ func _integrate_flight(delta: float) -> void:
 		var collider := collision.get_collider()
 		if collider is Paddle:
 			_handle_paddle_collision(collider, collision.get_normal())
+		elif collider.has_method("on_ball_hit"):
+			# Brick matrix interaction
+			collider.on_ball_hit(self, collision.get_normal())
 		else:
-			velocity = velocity.bounce(collision.get_normal()) * bounce_damping
+			var normal := collision.get_normal()
+			if shape_type == Shape.TRIANGLE:
+				var facet_deflect := Vector2(cos(shape_angle), sin(shape_angle)) * 0.24
+				normal = (normal + facet_deflect).normalized()
+				if fluid_sim != null:
+					fluid_sim.inject_vortex(collision.get_position(), 4.0 * signf(spin), 120.0, Color(0.3, 1.0, 0.8, 0.6))
+			elif shape_type == Shape.CUBE:
+				_squash = Vector2(0.5, 1.5)
+			elif shape_type == Shape.STAR:
+				spin = clampf(spin * -1.2 + randf_range(-0.3, 0.3), -1.0, 1.0)
+			elif shape_type == Shape.RUGBY:
+				_squash = Vector2(1.6, 0.5)
+
+			velocity = velocity.bounce(normal) * bounce_damping
 			hit_wall.emit(collision.get_position(), velocity.length())
 			_squash = Vector2(0.72, 1.28)
 			if vfx_mgr != null:
@@ -452,7 +521,22 @@ func _handle_paddle_collision(paddle: Paddle, _normal: Vector2) -> void:
 	var hit_offset := clampf((global_position.y - paddle.global_position.y) / 70.0, -1.0, 1.0)
 	var forward_dir := Vector2.RIGHT if paddle.player_id == 0 else Vector2.LEFT
 	var out_dir := forward_dir
-	out_dir.y = hit_offset * 0.95
+
+	# Paddle Shape Mutator Deflections
+	if paddle.shape_type == Paddle.Shape.SCOOP:
+		hit_offset *= 0.32
+		out_dir.y = hit_offset * 0.7
+	elif paddle.shape_type == Paddle.Shape.WEDGE:
+		var sgn := signf(hit_offset) if absf(hit_offset) > 0.05 else (1.0 if randf() > 0.5 else -1.0)
+		out_dir.y = sgn * (0.82 + absf(hit_offset) * 0.35)
+	elif paddle.shape_type == Paddle.Shape.FORK:
+		if absf(hit_offset) < 0.28:
+			out_dir.y = 0.0
+		else:
+			out_dir.y = signf(hit_offset) * 0.95
+	else:
+		out_dir.y = hit_offset * 0.95
+
 	out_dir += paddle.velocity * 0.0009
 	out_dir = out_dir.normalized()
 
@@ -462,6 +546,12 @@ func _handle_paddle_collision(paddle: Paddle, _normal: Vector2) -> void:
 		speed_boost += 0.03
 	if is_in_cymatic_lock:
 		speed_boost += 0.05
+	if paddle.shape_type == Paddle.Shape.SCOOP:
+		speed_boost += 0.08
+	elif paddle.shape_type == Paddle.Shape.FORTRESS:
+		speed_boost += 0.18
+	elif paddle.shape_type == Paddle.Shape.FORK and absf(hit_offset) < 0.28:
+		speed_boost += 0.25
 
 	var perfect := paddle.consume_parry()
 	last_hit_was_perfect = perfect
@@ -471,13 +561,19 @@ func _handle_paddle_collision(paddle: Paddle, _normal: Vector2) -> void:
 	else:
 		spin = clampf(-hit_offset * 0.85 + paddle.velocity.y * 0.002, -1.0, 1.0)
 
-	var out_speed := minf(incoming * speed_boost + 48.0, _rally_speed_cap())
+	var bonus_flat := 48.0
+	if paddle.shape_type == Paddle.Shape.FORTRESS:
+		bonus_flat += 280.0
+	var out_speed := minf(incoming * speed_boost + bonus_flat, _rally_speed_cap())
 	velocity = out_dir * out_speed
 	last_hit_speed = out_speed
 	_squash = Vector2(0.55, 1.45)
 
 	if fluid_sim != null:
-		fluid_sim.inject_shockwave(global_position, out_dir, 2200.0 if perfect else 1600.0, paddle.team_color)
+		var wave_power := 2200.0 if perfect else 1600.0
+		if paddle.shape_type == Paddle.Shape.FORTRESS:
+			wave_power += 1400.0
+		fluid_sim.inject_shockwave(global_position, out_dir, wave_power, paddle.team_color)
 		fluid_sim.inject_vortex(global_position, spin * 6.5, 96.0, paddle.team_color)
 
 	if vfx_mgr != null:
@@ -605,8 +701,17 @@ func _update_visuals() -> void:
 		_orb_mat.set_shader_parameter("heat", heat)
 		_orb_mat.set_shader_parameter("lock", lock)
 		_orb_mat.set_shader_parameter("fireball", 1.0 if fireball_time > 0.0 else 0.0)
-		_orb_mat.set_shader_parameter("pulse", 1.05 + (0.18 * sin(Time.get_ticks_msec() * 0.02) if lock > 0.5 or fireball_time > 0.0 else 0.08 * sin(_serve_bob)))
-		if lock > 0.5:
+		_orb_mat.set_shader_parameter("shape_type", int(shape_type))
+		_orb_mat.set_shader_parameter("shape_angle", shape_angle)
+		if shape_type == Shape.TRIANGLE:
+			_orb_mat.set_shader_parameter("glow_color", Color(0.25, 1.0, 0.85))
+		elif shape_type == Shape.CUBE:
+			_orb_mat.set_shader_parameter("glow_color", Color(0.92, 0.35, 1.0))
+		elif shape_type == Shape.STAR:
+			_orb_mat.set_shader_parameter("glow_color", Color(1.0, 0.88, 0.15))
+		elif shape_type == Shape.RUGBY:
+			_orb_mat.set_shader_parameter("glow_color", Color(1.0, 0.32, 0.65))
+		elif lock > 0.5:
 			_orb_mat.set_shader_parameter("glow_color", Color(1.0, 1.0, 1.0))
 		elif fireball_time > 0.0 or heat > 0.65:
 			_orb_mat.set_shader_parameter("glow_color", Color(1.0, 0.38, 0.06))

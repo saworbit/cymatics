@@ -12,20 +12,26 @@ extends CanvasLayer
 @onready var win_overlay: Control = $WinOverlay
 @onready var win_label: Label = $WinOverlay/WinPanel/WinLabel
 
+@onready var p2_label: Label = $BottomPanel/P2Container/P2Label
+
 var game_mgr: GameManager
+var tournament_mgr: TournamentManager
 var _flash: ColorRect
 var _callout: Label
 var _serve_hint: Label
 var _combo: Label
 var _p1_ready: Label
 var _p2_ready: Label
+var _stage_banner: Label
+var _stage_desc: Label
 var _help: Label
 var _callout_tween: Tween
 var _serve_tween: Tween
 var _help_fading := false
 
-func setup(p_game_mgr: GameManager, p_p1: Paddle, p_p2: Paddle) -> void:
+func setup(p_game_mgr: GameManager, p_p1: Paddle, p_p2: Paddle, p_tournament: TournamentManager = null) -> void:
 	game_mgr = p_game_mgr
+	tournament_mgr = p_tournament
 	game_mgr.score_updated.connect(update_score)
 	game_mgr.set_won.connect(update_sets)
 	game_mgr.rally_updated.connect(update_rally)
@@ -34,10 +40,17 @@ func setup(p_game_mgr: GameManager, p_p1: Paddle, p_p2: Paddle) -> void:
 	game_mgr.match_reset.connect(_on_match_reset)
 	game_mgr.ai_toggled.connect(update_ai_status)
 	game_mgr.zen_mode_toggled.connect(update_zen_status)
+	game_mgr.gauntlet_mode_toggled.connect(update_gauntlet_status)
 	game_mgr.serving_started.connect(_on_serving)
 	game_mgr.callout.connect(show_callout)
 	if p_game_mgr.vfx_mgr != null:
 		p_game_mgr.vfx_mgr.flash_requested.connect(_on_flash)
+
+	if tournament_mgr != null:
+		tournament_mgr.stage_started.connect(_on_tournament_stage_started)
+		tournament_mgr.stage_completed.connect(_on_tournament_stage_completed)
+		tournament_mgr.tournament_won.connect(_on_tournament_won)
+		tournament_mgr.tournament_lost.connect(_on_tournament_lost)
 
 	if p_p1 != null:
 		p_p1.momentum_changed.connect(func(v: float):
@@ -159,7 +172,40 @@ func _build_juice_nodes() -> void:
 	_p2_ready.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_p2_ready)
 
+	_stage_banner = Label.new()
+	_stage_banner.name = "StageBanner"
+	_stage_banner.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_stage_banner.offset_left = -450.0
+	_stage_banner.offset_right = 450.0
+	_stage_banner.offset_top = 175.0
+	_stage_banner.offset_bottom = 225.0
+	_stage_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_stage_banner.add_theme_font_size_override("font_size", 34)
+	_stage_banner.add_theme_color_override("font_color", Color(1.0, 0.9, 0.35))
+	_stage_banner.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+	_stage_banner.add_theme_constant_override("shadow_offset_x", 2)
+	_stage_banner.add_theme_constant_override("shadow_offset_y", 2)
+	_stage_banner.modulate.a = 0.0
+	_stage_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_stage_banner)
+
+	_stage_desc = Label.new()
+	_stage_desc.name = "StageDesc"
+	_stage_desc.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_stage_desc.offset_left = -400.0
+	_stage_desc.offset_right = 400.0
+	_stage_desc.offset_top = 225.0
+	_stage_desc.offset_bottom = 265.0
+	_stage_desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_stage_desc.add_theme_font_size_override("font_size", 16)
+	_stage_desc.add_theme_color_override("font_color", Color(0.85, 0.85, 0.95))
+	_stage_desc.modulate.a = 0.0
+	_stage_desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_stage_desc)
+
 	_help = get_node_or_null("BottomPanel/StatusContainer/ControlsHelp") as Label
+	if _help != null:
+		_help.text = "THAT'S A PADDLIN'  ·  Padd vs Lin  ·  mouse/WASD  ·  LMB stream  ·  RMB suck  ·  SPACE blast/stun  ·  [G] Gauntlet  [T] AI  [R] rematch"
 
 	var title := Label.new()
 	title.name = "GameTitle"
@@ -193,7 +239,11 @@ func update_score(s1: int, s2: int) -> void:
 	_punch_scale(p2_score_label, 1.45)
 
 func update_sets(_winner: int, set1: int, set2: int) -> void:
-	sets_label.text = "SETS: %d - %d" % [set1, set2]
+	if game_mgr != null and game_mgr.is_gauntlet_mode and tournament_mgr != null:
+		var stg := tournament_mgr.current_stage + 1
+		sets_label.text = "GAUNTLET %d/5 · SETS: %d - %d" % [stg, set1, set2]
+	else:
+		sets_label.text = "SETS: %d - %d" % [set1, set2]
 	_punch_scale(sets_label, 1.2)
 
 func update_rally(hits: int) -> void:
@@ -240,7 +290,7 @@ func show_callout(text: String, color: Color) -> void:
 
 func show_match_winner(winner_id: int) -> void:
 	win_overlay.visible = true
-	var winner_name := "PADD" if winner_id == 0 else "LIN"
+	var winner_name := "PADD" if winner_id == 0 else (p2_label.text if p2_label else "RIVAL")
 	win_label.text = "%s WINS\n\nTHAT'S A PADDLIN'\n\nPress [R]  ·  one more?" % winner_name
 	_serve_hint.visible = false
 	if game_mgr:
@@ -258,12 +308,47 @@ func update_zen_status(enabled: bool) -> void:
 	else:
 		sets_label.text = "SETS: %d - %d" % [game_mgr.sets_p1, game_mgr.sets_p2]
 
+func update_gauntlet_status(enabled: bool) -> void:
+	if enabled:
+		sets_label.text = "GAUNTLET 1/5"
+	else:
+		sets_label.text = "SETS: %d - %d" % [game_mgr.sets_p1, game_mgr.sets_p2]
+		p2_label.text = "LIN"
+		p2_label.add_theme_color_override("font_color", Color(1, 0, 0.67))
+
+func _on_tournament_stage_started(stage_idx: int, info: Dictionary) -> void:
+	p2_label.text = info.get("boss_name", "BOSS")
+	p2_label.add_theme_color_override("font_color", info.get("color", Color(1, 0, 0.67)))
+	sets_label.text = "GAUNTLET %d/5" % (stage_idx + 1)
+	
+	_stage_banner.text = "%s: %s" % [info.get("title", "STAGE"), info.get("boss_name", "BOSS")]
+	_stage_banner.add_theme_color_override("font_color", info.get("color", Color(1.0, 0.9, 0.35)))
+	_stage_desc.text = "%s  —  %s" % [info.get("subtitle", ""), info.get("description", "")]
+	
+	var tw := create_tween()
+	tw.tween_property(_stage_banner, "modulate:a", 1.0, 0.15)
+	tw.parallel().tween_property(_stage_desc, "modulate:a", 1.0, 0.15)
+	tw.tween_interval(2.6)
+	tw.tween_property(_stage_banner, "modulate:a", 0.0, 0.4)
+	tw.parallel().tween_property(_stage_desc, "modulate:a", 0.0, 0.4)
+
+func _on_tournament_stage_completed(stage_idx: int, _info: Dictionary) -> void:
+	show_callout("STAGE %d CLEARED!" % (stage_idx + 1), Color(0.2, 1.0, 0.4))
+
+func _on_tournament_won() -> void:
+	win_overlay.visible = true
+	win_label.text = "TOURNAMENT CHAMPION!\n\nALL 5 RIVALS DEFEATED\n\nPress [R] or [G] to Play Again"
+
+func _on_tournament_lost() -> void:
+	win_overlay.visible = true
+	win_label.text = "DEFEATED IN THE GAUNTLET\n\nPress [R] to Retry Stage"
+
 func _on_serving(server_id: int) -> void:
 	_serve_hint.visible = true
 	if server_id == 0:
 		_serve_hint.text = "PADD  ·  SPACE / CLICK TO SERVE"
 	else:
-		_serve_hint.text = "LIN IS SERVING..."
+		_serve_hint.text = "%s IS SERVING..." % p2_label.text
 	if _serve_tween != null and _serve_tween.is_running():
 		_serve_tween.kill()
 	_serve_hint.modulate.a = 1.0

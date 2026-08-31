@@ -10,6 +10,8 @@ signal stunned(duration: float)
 signal armed
 signal stun_fired(pos: Vector2)
 
+enum Shape { STANDARD, SCOOP, WEDGE, FORK, FORTRESS }
+
 @export var player_id := 0
 @export var is_ai := false
 @export var speed := 920.0
@@ -35,6 +37,8 @@ var stun_time := 0.0
 var armed_time := 0.0
 var size_mod := 1.0
 var size_mod_time := 0.0
+var shape_type: Shape = Shape.STANDARD
+var shape_time := 0.0
 var magnet_time := 0.0
 var stun_cooldown := 0.0
 var _stun_fx: ColorRect
@@ -206,11 +210,29 @@ func apply_size_mod(mult: float, duration: float) -> void:
 func apply_magnet(duration: float) -> void:
 	magnet_time = maxf(magnet_time, duration)
 
+func mutate_shape(new_shape: Shape, duration: float) -> void:
+	shape_type = new_shape
+	shape_time = maxf(shape_time, duration)
+	var label := "SCOOP"
+	match new_shape:
+		Shape.SCOOP: label = "SCOOP"
+		Shape.WEDGE: label = "WEDGE"
+		Shape.FORK: label = "FORK"
+		Shape.FORTRESS: label = "AEGIS"
+	if vfx_mgr != null:
+		vfx_mgr.spawn_hit_burst(global_position, team_color, 1.8)
+		vfx_mgr.spawn_shockwave(global_position, team_color, 360.0, 0.4)
+	if audio_mgr != null:
+		audio_mgr.trigger_sting(520.0, 0.4)
+	emote(2, 1.2, label)
+
 func clear_mods() -> void:
 	armed_time = 0.0
 	magnet_time = 0.0
 	size_mod_time = 0.0
 	size_mod = 1.0
+	shape_time = 0.0
+	shape_type = Shape.STANDARD
 	stun_time = 0.0
 	call_deferred("_apply_size_visual")
 
@@ -264,6 +286,10 @@ func _physics_process(delta: float) -> void:
 		armed_time -= delta
 	if magnet_time > 0.0:
 		magnet_time -= delta
+	if shape_time > 0.0:
+		shape_time -= delta
+		if shape_time <= 0.0 and shape_type != Shape.STANDARD:
+			shape_type = Shape.STANDARD
 	if size_mod_time > 0.0:
 		size_mod_time -= delta
 		if size_mod_time <= 0.0:
@@ -543,6 +569,8 @@ func _update_visuals(delta: float) -> void:
 			_cannon.color = Color(1.0, 0.95, 0.4, 0.7 + 0.3 * sin(Time.get_ticks_msec() * 0.02))
 	if _body_mat != null:
 		_body_mat.set_shader_parameter("glow_color", team_color)
+		_body_mat.set_shader_parameter("shape_type", int(shape_type))
+		_body_mat.set_shader_parameter("flip", 1.0 if player_id == 1 else 0.0)
 		var ready := 1.0 if momentum >= 1.0 else momentum * 0.35
 		if armed_time > 0.0:
 			ready = 1.0
