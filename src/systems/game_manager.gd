@@ -366,4 +366,6 @@ func restart_match() -> void:
 		paddle_right.reset_momentum()
 		paddle_right.global_position = Vector2(1740, 540)
 		paddle_right.velocity = Vector2.ZERO
+	if is_gauntlet_mode and tournament_mgr != null:
+		tournament_mgr.restart_stage()
 	start_serve(0)

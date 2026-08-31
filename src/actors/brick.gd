@@ -18,8 +18,11 @@ var audio_mgr: AudioManager
 var _visual: ColorRect
 var _mat: ShaderMaterial
 var _hit_pulse := 0.0
+var _is_destroyed := false
 
 func _ready() -> void:
+	z_index = 8
+	add_to_group("cymatics_bricks")
 	collision_layer = 1
 	collision_mask = 1
 	_build_components()
@@ -68,6 +71,9 @@ func _process(delta: float) -> void:
 			_mat.set_shader_parameter("hit_pulse", _hit_pulse)
 
 func on_ball_hit(ball: Ball, hit_normal: Vector2) -> void:
+	if _is_destroyed or current_hp <= 0:
+		return
+
 	current_hp -= 1
 	_hit_pulse = 1.0
 	var breaker := ball.last_hitter_id
@@ -90,6 +96,7 @@ func on_ball_hit(ball: Ball, hit_normal: Vector2) -> void:
 		audio_mgr.trigger_impact(ball.velocity.length() * 0.85, global_position, true)
 
 	if current_hp <= 0:
+		_is_destroyed = true
 		_shatter(breaker)
 	else:
 		_update_visual_properties()

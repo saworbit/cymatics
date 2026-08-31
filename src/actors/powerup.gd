@@ -64,6 +64,7 @@ const COLORS := {
 
 func _ready() -> void:
 	z_index = 9
+	add_to_group("cymatics_powerups")
 	collision_layer = 4
 	collision_mask = 3 # Detects both Ball (1) and Paddle (2)
 	monitoring = true
