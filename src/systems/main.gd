@@ -65,6 +65,7 @@ func _physics_process(delta: float) -> void:
 			heat = 0.55
 		_display_mat.set_shader_parameter("impact_pulse", _pulse)
 		_display_mat.set_shader_parameter("heat", heat)
+		_display_mat.set_shader_parameter("flow_energy", fluid_sim.get_flow_energy_norm())
 
 func _process(_delta: float) -> void:
 	_update_display_texture()
