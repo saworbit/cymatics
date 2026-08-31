@@ -9,11 +9,13 @@ layout(set = 0, binding = 2, rgba16f) uniform readonly image2D dye_read;
 layout(set = 0, binding = 3, rgba16f) uniform writeonly image2D dye_write;
 
 layout(push_constant, std430) uniform SplatParams {
-    vec2 point;         // Normalized position (0..1)
-    vec2 force;         // Velocity impulse to inject
-    vec4 color;         // Dye color to inject
-    float radius;       // In normalized coordinates
+    vec2 point;
+    vec2 force;
+    vec4 color;
+    float radius;
     float strength;
+    float mode; // 0 = jet, 1 = vortex, 2 = sink
+    float pad;
 } splat;
 
 void main() {
@@ -31,10 +33,26 @@ void main() {
     float influence = exp(-dist_sq / rad_sq) * splat.strength;
 
     vec2 vel = imageLoad(velocity_read, coord).xy;
-    vel += splat.force * influence;
+    float mode = splat.mode;
+    if (mode < 0.5) {
+        vel += splat.force * influence;
+    } else if (mode < 1.5) {
+        float len = length(delta);
+        if (len > 0.35) {
+            vec2 tang = vec2(-delta.y, delta.x) / len;
+            vel += tang * splat.force.x * influence;
+        }
+    } else {
+        float len = length(delta);
+        if (len > 0.35) {
+            vec2 inward = -delta / len;
+            vel += inward * splat.force.x * influence;
+        }
+    }
     imageStore(velocity_write, coord, vec4(vel, 0.0, 0.0));
 
     vec4 dye = imageLoad(dye_read, coord);
     dye += splat.color * influence;
+    dye = min(dye, vec4(1.8, 1.8, 1.8, 1.0));
     imageStore(dye_write, coord, dye);
 }

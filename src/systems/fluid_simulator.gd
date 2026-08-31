@@ -11,9 +11,9 @@ signal step_completed(frame_index: int)
 @export var jacobi_iterations := 20
 @export var sub_steps := 3
 @export var viscosity := 0.0001
-@export var vorticity := 0.35
-@export var surface_tension := 0.05
-@export var dissipation := 0.988
+@export var vorticity := 0.95
+@export var surface_tension := 0.11
+@export var dissipation := 0.995
 
 var rd: RenderingDevice
 var is_compute_ready := false
@@ -54,6 +54,7 @@ var _average_kinetic_energy := 200.0
 
 # Active hydrodynamic emitters for continuous 2-way physics coupling
 var _active_flow_nodes: Array[Dictionary] = []
+var _ambient_t := 0.0
 
 var _cpu_fallback := false
 var _cpu_vel_x: PackedFloat32Array
@@ -222,56 +223,51 @@ func _init_cpu_fallback() -> void:
 	_cpu_image = Image.create_from_data(grid_size.x, grid_size.y, false, Image.FORMAT_RGBA8, _cpu_byte_buffer)
 	_cpu_texture = ImageTexture.create_from_image(_cpu_image)
 
-func inject_force(world_pos: Vector2, force: Vector2, radius_px: float, color: Color) -> void:
-	var norm_pos := Vector2(world_pos.x / 1920.0, world_pos.y / 1080.0)
-	var norm_rad := radius_px / 1920.0
-	
+func _queue_splat(world_pos: Vector2, force: Vector2, radius_px: float, color: Color, mode: float, strength: float = 1.0) -> void:
 	_pending_splats.append({
-		"point": norm_pos,
-		"force": force * 0.05,
+		"point": Vector2(world_pos.x / 1920.0, world_pos.y / 1080.0),
+		"force": force,
 		"color": color,
-		"radius": norm_rad,
-		"strength": 1.0
+		"radius": radius_px / 1920.0,
+		"strength": strength,
+		"mode": mode
 	})
-	
-	# Register active flow node for continuous hydrodynamic interaction
-	if force.length_squared() > 100.0:
-		_active_flow_nodes.append({
-			"pos": world_pos,
-			"vel": force,
-			"radius": radius_px,
-			"life": 0.45,
-			"decay": 2.2,
-			"vorticity": 0.0
-		})
-	
-	_average_kinetic_energy = clampf(_average_kinetic_energy + force.length() * 0.15, 50.0, 8000.0)
 
-func inject_vortex(world_pos: Vector2, swirl_strength: float, radius_px: float, color: Color) -> void:
-	var norm_pos := Vector2(world_pos.x / 1920.0, world_pos.y / 1080.0)
-	var norm_rad := radius_px / 1920.0
-	
-	# Inject a circular velocity couple into the compute shader
-	var tang := Vector2(-norm_pos.y + 0.5, norm_pos.x - 0.5).normalized() * (swirl_strength * 0.03)
-	_pending_splats.append({
-		"point": norm_pos,
-		"force": tang,
-		"color": color,
-		"radius": norm_rad,
-		"strength": 1.0
-	})
-	
+func _register_flow(world_pos: Vector2, vel: Vector2, radius_px: float, vorticity_amt: float, life: float, decay: float) -> void:
+	if _active_flow_nodes.size() > 48:
+		_active_flow_nodes.remove_at(0)
 	_active_flow_nodes.append({
 		"pos": world_pos,
-		"vel": Vector2.ZERO,
+		"vel": vel,
 		"radius": radius_px,
-		"life": 0.6,
-		"decay": 1.6,
-		"vorticity": swirl_strength
+		"life": life,
+		"decay": decay,
+		"vorticity": vorticity_amt
 	})
 
+func inject_force(world_pos: Vector2, force: Vector2, radius_px: float, color: Color) -> void:
+	_queue_splat(world_pos, force * 0.12, radius_px, color, 0.0)
+	if force.length_squared() > 80.0:
+		_register_flow(world_pos, force * 0.55, radius_px * 1.35, 0.0, 1.8, 0.55)
+	_average_kinetic_energy = clampf(_average_kinetic_energy + force.length() * 0.18, 50.0, 9000.0)
+
+func inject_vortex(world_pos: Vector2, swirl_strength: float, radius_px: float, color: Color) -> void:
+	_queue_splat(world_pos, Vector2(swirl_strength * 18.0, 0.0), radius_px, color, 1.0, 1.15)
+	_register_flow(world_pos, Vector2.ZERO, radius_px * 1.4, swirl_strength, 2.4, 0.42)
+	_average_kinetic_energy = clampf(_average_kinetic_energy + absf(swirl_strength) * 80.0, 50.0, 9000.0)
+
+func inject_sink(world_pos: Vector2, pull_strength: float, radius_px: float, color: Color) -> void:
+	_queue_splat(world_pos, Vector2(pull_strength * 0.08, 0.0), radius_px, color, 2.0, 1.1)
+	_register_flow(world_pos, Vector2.ZERO, radius_px * 1.5, pull_strength * 0.002, 1.6, 0.7)
+	_average_kinetic_energy = clampf(_average_kinetic_energy + pull_strength * 0.08, 50.0, 9000.0)
+
+func inject_shockwave(world_pos: Vector2, dir: Vector2, power: float, color: Color) -> void:
+	_queue_splat(world_pos, dir * (power * 0.14), 160.0, Color(color.r, color.g, color.b, 0.85), 0.0, 1.3)
+	_queue_splat(world_pos, Vector2(power * 0.04, 0.0), 190.0, Color(1, 1, 1, 0.35), 2.0, 0.7)
+	_register_flow(world_pos, dir * power, 180.0, 0.0, 1.1, 0.9)
+
 func inject_dye(world_pos: Vector2, color: Color, radius_px: float) -> void:
-	inject_force(world_pos, Vector2.ZERO, radius_px, color)
+	_queue_splat(world_pos, Vector2.ZERO, radius_px, color, 0.0, 0.85)
 
 func sample_velocity_at(world_pos: Vector2) -> Vector2:
 	if _cpu_fallback:
@@ -284,16 +280,15 @@ func sample_velocity_at(world_pos: Vector2) -> Vector2:
 	for node in _active_flow_nodes:
 		var delta: Vector2 = world_pos - node["pos"]
 		var dist := delta.length()
-		var r: float = node["radius"]
-		if dist < r * 2.5:
-			var inf: float = exp(-(dist * dist) / maxf(r * r, 1.0)) * (node["life"] / 0.45)
-			# Linear momentum
-			vel_total += (node["vel"] as Vector2) * (inf * 0.65)
-			# Vortex angular velocity
+		var r: float = maxf(node["radius"] as float, 8.0)
+		if dist < r * 3.2:
+			var life_n: float = clampf((node["life"] as float) / 1.8, 0.15, 1.2)
+			var inf: float = exp(-(dist * dist) / (r * r * 1.15)) * life_n
+			vel_total += (node["vel"] as Vector2) * (inf * 0.85)
 			var vort: float = node["vorticity"]
-			if absf(vort) > 0.01 and dist > 4.0:
-				var tang := Vector2(-delta.y, delta.x).normalized()
-				vel_total += tang * (vort * inf * 0.8)
+			if absf(vort) > 0.01 and dist > 6.0:
+				var tang := Vector2(-delta.y, delta.x) / dist
+				vel_total += tang * (vort * inf * 140.0)
 	return vel_total
 
 func sample_curl_at(world_pos: Vector2) -> float:
@@ -301,30 +296,46 @@ func sample_curl_at(world_pos: Vector2) -> float:
 	for node in _active_flow_nodes:
 		var delta: Vector2 = world_pos - node["pos"]
 		var dist := delta.length()
-		var r: float = node["radius"]
-		if dist < r * 2.5:
-			var inf: float = exp(-(dist * dist) / maxf(r * r, 1.0))
-			curl_total += (node["vorticity"] as float) * inf * (node["life"] / 0.45)
-	
-	var v_up := sample_velocity_at(world_pos + Vector2(0, -20))
-	var v_down := sample_velocity_at(world_pos + Vector2(0, 20))
-	var v_left := sample_velocity_at(world_pos + Vector2(-20, 0))
-	var v_right := sample_velocity_at(world_pos + Vector2(20, 0))
-	var field_curl := 0.5 * ((v_right.y - v_left.y) - (v_down.x - v_up.x)) / 20.0
-	return clampf(curl_total + field_curl * 0.4, -4.0, 4.0)
+		var r: float = maxf(node["radius"] as float, 8.0)
+		if dist < r * 3.0:
+			var inf: float = exp(-(dist * dist) / (r * r))
+			curl_total += (node["vorticity"] as float) * inf * clampf((node["life"] as float) / 1.8, 0.2, 1.0)
+	return clampf(curl_total, -5.0, 5.0)
 
 func get_average_kinetic_energy() -> float:
 	return _average_kinetic_energy
+
+func get_flow_energy_norm() -> float:
+	return clampf(_average_kinetic_energy / 4500.0, 0.0, 1.0)
+
+func _seed_ambient(delta: float) -> void:
+	_ambient_t += delta
+	var t := _ambient_t
+	var left := Vector2(460.0 + sin(t * 0.35) * 80.0, 540.0 + cos(t * 0.27) * 160.0)
+	var right := Vector2(1460.0 + sin(t * 0.35 + 2.1) * 80.0, 540.0 + cos(t * 0.27 + 1.4) * 160.0)
+	var fog := Color(0.22, 0.04, 0.40, 0.028)
+	_queue_splat(left, Vector2(10.0, 0.0), 180.0, fog, 1.0, 0.16)
+	_queue_splat(right, Vector2(-10.0, 0.0), 180.0, fog, 1.0, 0.16)
+	if fmod(t, 0.45) < delta + 0.001:
+		_register_flow(left, Vector2(50.0, -24.0), 180.0, 1.4, 1.5, 0.48)
+		_register_flow(right, Vector2(-50.0, 24.0), 180.0, -1.4, 1.5, 0.48)
 
 func step_simulation(delta: float) -> void:
 	frame_counter += 1
 	_average_kinetic_energy = lerpf(_average_kinetic_energy, 100.0, 0.02)
 
-	# Update active flow nodes lifecycle
+	_seed_ambient(delta)
 	var kept_nodes: Array[Dictionary] = []
 	for node in _active_flow_nodes:
 		node["life"] -= delta * node["decay"]
+		var nvel: Vector2 = node["vel"]
+		if nvel.length_squared() > 1.0:
+			node["pos"] = (node["pos"] as Vector2) + nvel * (delta * 0.12)
 		if node["life"] > 0.0:
+			var p: Vector2 = node["pos"]
+			p.x = clampf(p.x, 40.0, 1880.0)
+			p.y = clampf(p.y, 50.0, 1030.0)
+			node["pos"] = p
 			kept_nodes.append(node)
 	_active_flow_nodes = kept_nodes
 
@@ -355,7 +366,9 @@ func step_simulation(delta: float) -> void:
 				frc.x, frc.y,
 				col.r, col.g, col.b, col.a,
 				splat["radius"],
-				splat["strength"]
+				splat["strength"],
+				splat.get("mode", 0.0),
+				0.0
 			]).to_byte_array()
 			rd.compute_list_set_push_constant(list, pc_splat, pc_splat.size())
 			rd.compute_list_dispatch(list, groups_x, groups_y, 1)

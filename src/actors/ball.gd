@@ -306,19 +306,21 @@ func _integrate_flight(delta: float) -> void:
 		var curl := fluid_sim.sample_curl_at(global_position)
 		var heading := velocity / speed
 
-		# 1. Aerodynamic drag / fluid push
-		var rel_vel := fluid_vel - velocity * 0.25
+		# Ride currents: strong sideways deflection, modest aligned boost. Never steal speed.
 		var aligned := fluid_vel.dot(heading)
 		var lateral := fluid_vel - heading * aligned
-		velocity += lateral * (1.25 * delta)
-		if aligned > 50.0:
-			velocity += heading * (minf(aligned, 1200.0) * 0.15 * delta)
+		velocity += lateral * (3.4 * delta)
+		if aligned > 40.0:
+			velocity += heading * (minf(aligned, 1600.0) * 0.28 * delta)
+		elif aligned < -80.0:
+			velocity += heading * (aligned * 0.08 * delta)
 
-		# 2. Curl & Magnus lift effect
-		spin = clampf(spin + curl * (0.45 * delta), -1.0, 1.0)
-		spin = move_toward(spin, 0.0, delta * 0.18)
+		spin = clampf(spin + curl * (0.85 * delta), -1.0, 1.0)
+		spin = move_toward(spin, 0.0, delta * 0.12)
 		var mag_dir := Vector2(-heading.y, heading.x)
-		velocity += mag_dir * (spin * 440.0 * delta)
+		velocity += mag_dir * (spin * 620.0 * delta)
+		if absf(curl) > 1.4:
+			velocity += mag_dir * (signf(curl) * 280.0 * delta)
 
 		# 3. Bow shock and fluid wake injection
 		var wake_color := Color(1.0, 0.85, 0.2, 0.85)
@@ -475,8 +477,8 @@ func _handle_paddle_collision(paddle: Paddle, _normal: Vector2) -> void:
 	_squash = Vector2(0.55, 1.45)
 
 	if fluid_sim != null:
-		fluid_sim.inject_force(global_position, out_dir * (2600.0 if perfect else 1900.0), 90.0 if perfect else 72.0, paddle.team_color)
-		fluid_sim.inject_vortex(global_position, spin * 5.0, 80.0, paddle.team_color)
+		fluid_sim.inject_shockwave(global_position, out_dir, 2200.0 if perfect else 1600.0, paddle.team_color)
+		fluid_sim.inject_vortex(global_position, spin * 6.5, 96.0, paddle.team_color)
 
 	if vfx_mgr != null:
 		var burst_scale := 2.4 if perfect else (1.7 + minf(rally_hits * 0.08, 1.2))

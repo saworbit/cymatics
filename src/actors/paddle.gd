@@ -367,7 +367,12 @@ func _apply_hydro(delta: float) -> void:
 	var nozzle_pos := global_position + forward_dir * 40.0
 
 	if velocity.length() > 40.0 and fluid_sim != null:
-		fluid_sim.inject_force(global_position, velocity.normalized() * 750.0, 36.0, Color(team_color.r, team_color.g, team_color.b, 0.28))
+		var wake := velocity.normalized()
+		fluid_sim.inject_force(global_position, wake * 900.0, 40.0, Color(team_color.r, team_color.g, team_color.b, 0.38))
+		var flank := Vector2(-wake.y, wake.x) * 28.0
+		var eddy := Color(team_color.r, team_color.g, team_color.b, 0.22)
+		fluid_sim.inject_vortex(global_position + flank, 2.2, 42.0, eddy)
+		fluid_sim.inject_vortex(global_position - flank, -2.2, 42.0, eddy)
 		if audio_mgr != null:
 			audio_mgr.register_paddle_movement(velocity.length(), global_position.x / 1920.0)
 
@@ -376,7 +381,8 @@ func _apply_hydro(delta: float) -> void:
 
 	if is_shooting and fluid_sim != null:
 		var stream_dir := (forward_dir + Vector2(0, velocity.y * 0.0008)).normalized()
-		fluid_sim.inject_force(nozzle_pos, stream_dir * (shoot_force * mag), 56.0 * mag, Color(team_color.r, team_color.g, team_color.b, 0.65))
+		fluid_sim.inject_force(nozzle_pos, stream_dir * (shoot_force * mag), 62.0 * mag, Color(team_color.r, team_color.g, team_color.b, 0.78))
+		fluid_sim.inject_vortex(nozzle_pos + stream_dir * 70.0, (2.4 if player_id == 0 else -2.4) * mag, 48.0, Color(team_color.r, team_color.g, team_color.b, 0.4))
 		for node in balls:
 			if node is Ball:
 				var b := node as Ball
@@ -398,8 +404,8 @@ func _apply_hydro(delta: float) -> void:
 
 	if is_sucking and fluid_sim != null:
 		var swirl_dir := 4.5 if player_id == 0 else -4.5
-		fluid_sim.inject_force(nozzle_pos, -forward_dir * (suck_force * mag), 96.0 * mag, Color(team_color.r, team_color.g, team_color.b, 0.45))
-		fluid_sim.inject_vortex(nozzle_pos, swirl_dir * mag, 110.0 * mag, team_color)
+		fluid_sim.inject_sink(nozzle_pos, suck_force * mag, 120.0 * mag, Color(team_color.r, team_color.g, team_color.b, 0.55))
+		fluid_sim.inject_vortex(nozzle_pos, swirl_dir * mag, 130.0 * mag, Color(team_color.r, team_color.g, team_color.b, 0.5))
 
 		if vortex_vfx != null:
 			vortex_vfx.visible = true
@@ -446,8 +452,8 @@ func trigger_blast(strength: float = 1.0) -> void:
 	var power := clampf(strength, 0.5, 1.4)
 
 	if fluid_sim != null:
-		fluid_sim.inject_force(blast_pos, forward_dir * (3600.0 * power), 130.0, Color(1, 1, 1, 0.95))
-		fluid_sim.inject_vortex(blast_pos, (3.0 if player_id == 0 else -3.0) * power, 100.0, team_color)
+		fluid_sim.inject_shockwave(blast_pos, forward_dir, 3600.0 * power, team_color)
+		fluid_sim.inject_vortex(blast_pos, (4.2 if player_id == 0 else -4.2) * power, 120.0, Color.WHITE)
 
 	if vfx_mgr != null:
 		vfx_mgr.spawn_shockwave(blast_pos, team_color, 440.0 * power, 0.4)
@@ -502,7 +508,8 @@ func trigger_resonance() -> void:
 		audio_mgr.trigger_super(global_position)
 
 	if fluid_sim != null:
-		fluid_sim.inject_force(blast_pos, forward_dir * 5200.0, 180.0, Color.WHITE)
+		fluid_sim.inject_shockwave(blast_pos, forward_dir, 5200.0, Color.WHITE)
+		fluid_sim.inject_vortex(blast_pos, 6.0 if player_id == 0 else -6.0, 200.0, Color.WHITE)
 
 	if ball != null and is_instance_valid(ball) and not ball.is_scored and not ball.is_serving:
 		var to_ball := ball.global_position - global_position
