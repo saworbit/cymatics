@@ -129,7 +129,10 @@ func _on_powerup_collected(kind: int, hitter_id: int, ball: Ball) -> void:
 	var PowerupScript = preload("res://src/actors/powerup.gd")
 	var owner_id := hitter_id
 	if owner_id < 0:
-		owner_id = 0 if ball.velocity.x > 0.0 else 1
+		if ball != null and is_instance_valid(ball):
+			owner_id = 0 if ball.velocity.x > 0.0 else 1
+		else:
+			owner_id = 0
 	var self_p := paddle_left if owner_id == 0 else paddle_right
 	var foe_p := paddle_right if owner_id == 0 else paddle_left
 	var label = PowerupScript.LABELS.get(kind, "POWER")
@@ -139,7 +142,8 @@ func _on_powerup_collected(kind: int, hitter_id: int, ball: Ball) -> void:
 	if audio_mgr != null:
 		audio_mgr.trigger_sting(660.0, 0.45)
 	if vfx_mgr != null:
-		vfx_mgr.spawn_shockwave(ball.global_position, color, 420.0, 0.35)
+		var burst_pos := ball.global_position if (ball != null and is_instance_valid(ball)) else (self_p.global_position if self_p != null else Vector2(960, 540))
+		vfx_mgr.spawn_shockwave(burst_pos, color, 420.0, 0.35)
 		vfx_mgr.flash_screen(color, 0.16, 0.12)
 
 	match kind:

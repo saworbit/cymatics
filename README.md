@@ -19,11 +19,12 @@ Spiritual successor to [Plasma Pong](https://en.wikipedia.org/wiki/Plasma_Pong) 
 | RMB / K | Suction vortex |
 | Space | Blast / stun cannon / super |
 | Time Space on contact | **PERFECT** parry |
+| G | Toggle Gauntlet Mode (5 Boss Stages) |
 | T | Toggle AI (Lin) |
-| R | Rematch |
+| R | Rematch / Retry |
 | Z | Zen mode |
 
-Grab mid-rally orbs: **MULTI**, **GIANT**, **TINY**, **STUN**, **MAG**, **FIRE**, **HYPER**.
+Grab mid-rally orbs: **MULTI**, **GIANT**, **TINY**, **STUN**, **MAG**, **FIRE**, **HYPER**, plus shapeshifters **PRISM**, **CUBE**, **STAR**, **BLOB**, **SCOOP**, **WEDGE**, **AEGIS**.
 
 First to 7, win by 2, best of 3.
 
