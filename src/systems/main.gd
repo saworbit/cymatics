@@ -68,11 +68,13 @@ func _ready() -> void:
 	_update_display_texture()
 
 func _physics_process(delta: float) -> void:
-	fluid_sim.step_simulation(delta)
-	audio_mgr.update_fluid_drone(fluid_sim.get_average_kinetic_energy())
+	if fluid_sim != null:
+		fluid_sim.step_simulation(delta)
+	if audio_mgr != null and fluid_sim != null:
+		audio_mgr.update_fluid_drone(fluid_sim.get_average_kinetic_energy())
 	_update_camera(delta)
 	_pulse = move_toward(_pulse, 0.0, delta * 1.8)
-	if _display_mat != null:
+	if _display_mat != null and ball != null and fluid_sim != null:
 		var heat := 0.0
 		if ball.is_in_cymatic_lock:
 			heat = 1.0
@@ -100,7 +102,7 @@ func _update_camera(delta: float) -> void:
 	elif ball.is_in_overdrive:
 		want_zoom = 0.06
 	_lock_zoom = lerpf(_lock_zoom, want_zoom, clampf(delta * 2.5, 0.0, 1.0))
-	var z := 1.0 + _lock_zoom + vfx_mgr.get_zoom_punch()
+	var z := 1.0 + _lock_zoom + (vfx_mgr.get_zoom_punch() if vfx_mgr else 0.0)
 	camera.zoom = camera.zoom.lerp(Vector2(z, z), clampf(delta * 8.0, 0.0, 1.0))
 
 func _update_goal_glows() -> void:

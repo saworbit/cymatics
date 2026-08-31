@@ -23,6 +23,7 @@ Spiritual successor to [Plasma Pong](https://en.wikipedia.org/wiki/Plasma_Pong) 
 | T | Toggle AI (Lin) |
 | R | Rematch / Retry |
 | Z | Zen mode |
+| M | Toggle match music |
 
 Grab mid-rally orbs: **MULTI**, **GIANT**, **TINY**, **STUN**, **MAG**, **FIRE**, **HYPER**, plus shapeshifters **PRISM**, **CUBE**, **STAR**, **BLOB**, **SCOOP**, **WEDGE**, **AEGIS**.
 
@@ -62,6 +63,8 @@ That's a Paddlin'/
 - **Plasma Pong** — Steve Taylor, 2006. Original source lives in `third_party/plasma_pong/` and is **not** covered by this MIT license.
 - Fluid method after **Jos Stam**, *Real-Time Fluid Dynamics for Games* (GDC 2003).
 - Title from the Simpsons "that's a paddlin'" bit. Not affiliated with the Simpsons.
+- Match music: MintoDog, *Hope (Orchestral battle music)*, CC0.
+- SFX: Kenney.nl interface, sci-fi, and digital packs, CC0. See [`assets/audio/CREDITS.md`](assets/audio/CREDITS.md).
 
 ## License
 

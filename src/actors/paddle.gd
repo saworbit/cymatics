@@ -308,6 +308,7 @@ func _update_timers(delta: float) -> void:
 		shape_time -= delta
 		if shape_time <= 0.0 and shape_type != Shape.STANDARD:
 			shape_type = Shape.STANDARD
+			call_deferred("_apply_size_visual")
 	if size_mod_time > 0.0:
 		size_mod_time -= delta
 		if size_mod_time <= 0.0:
