@@ -49,6 +49,14 @@ var heartbeat_phase := 0.0
 func _ready() -> void:
 	_init_synthesizer()
 
+func _exit_tree() -> void:
+	playback = null
+	if player != null:
+		player.stop()
+		player.stream = null
+		player.queue_free()
+		player = null
+
 func _init_synthesizer() -> void:
 	player = AudioStreamPlayer.new()
 	var generator := AudioStreamGenerator.new()
@@ -154,7 +162,9 @@ func _process(_delta: float) -> void:
 	target_freq *= 1.0 + minf(rally * 0.02, 0.28)
 	var mod_index := absf(ball_curl) * 2.2
 
-	for f in range(frames_available):
+	var frames_to_generate := mini(frames_available, 1024)
+
+	for f in range(frames_to_generate):
 		var white := randf() * 2.0 - 1.0
 		brown_acc = (brown_acc + 0.02 * white) / 1.02
 		var drone_in := brown_acc * 3.2
@@ -215,6 +225,7 @@ func _process(_delta: float) -> void:
 		var ball_r := ball_sample * (1.0 + ball_pan) * 0.5
 		var left := drone_out * 0.16 + ball_l + grain_sample * 0.35 + impact_sample * 0.55 + sting_sample * 0.4 + chord_sample + hb
 		var right := drone_out * 0.16 + ball_r + grain_sample * 0.35 + impact_sample * 0.55 + sting_sample * 0.4 + chord_sample + hb
-		left = clampf(left, -0.95, 0.95)
-		right = clampf(right, -0.95, 0.95)
+		# Soft-knee saturation limiter
+		left = left / (1.0 + absf(left) * 0.35)
+		right = right / (1.0 + absf(right) * 0.35)
 		playback.push_frame(Vector2(left, right))

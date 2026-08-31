@@ -88,16 +88,19 @@ func _update_camera(delta: float) -> void:
 	camera.zoom = camera.zoom.lerp(Vector2(z, z), clampf(delta * 8.0, 0.0, 1.0))
 
 func _update_goal_glows() -> void:
-	if ball == null or ball.is_scored:
-		return
 	if _goal_glow_left != null:
-		var threat_l := clampf((220.0 - ball.global_position.x) / 220.0, 0.0, 1.0) if ball.velocity.x < 0.0 else 0.0
-		_goal_glow_left.color.a = 0.35 + threat_l * 0.65
-		_goal_glow_left.size.x = 8.0 + threat_l * 28.0
+		var threat_l := 0.0
+		if ball != null and not ball.is_scored and not ball.is_serving and ball.velocity.x < 0.0:
+			threat_l = clampf((220.0 - ball.global_position.x) / 220.0, 0.0, 1.0)
+		_goal_glow_left.color.a = lerpf(_goal_glow_left.color.a, 0.35 + threat_l * 0.65, 0.2)
+		_goal_glow_left.size.x = lerpf(_goal_glow_left.size.x, 8.0 + threat_l * 28.0, 0.2)
+
 	if _goal_glow_right != null:
-		var threat_r := clampf((ball.global_position.x - 1700.0) / 220.0, 0.0, 1.0) if ball.velocity.x > 0.0 else 0.0
-		_goal_glow_right.color.a = 0.35 + threat_r * 0.65
-		_goal_glow_right.size.x = 8.0 + threat_r * 28.0
+		var threat_r := 0.0
+		if ball != null and not ball.is_scored and not ball.is_serving and ball.velocity.x > 0.0:
+			threat_r = clampf((ball.global_position.x - 1700.0) / 220.0, 0.0, 1.0)
+		_goal_glow_right.color.a = lerpf(_goal_glow_right.color.a, 0.35 + threat_r * 0.65, 0.2)
+		_goal_glow_right.size.x = lerpf(_goal_glow_right.size.x, 8.0 + threat_r * 28.0, 0.2)
 		_goal_glow_right.position.x = 1920.0 - _goal_glow_right.size.x
 
 func _update_display_texture() -> void:

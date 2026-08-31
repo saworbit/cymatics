@@ -17,6 +17,7 @@ var host: Node2D
 var extra_balls: Array[Ball] = []
 var live_powerup = null
 var _spawn_cd := 2.4
+var _hazard_cd := 5.0
 var _hyper_time := 0.0
 
 func setup(p_host: Node2D, p_primary: Ball, p_p1: Paddle, p_p2: Paddle, p_gm: GameManager, p_fluid: FluidSimulator, p_vfx: VFXManager, p_audio: AudioManager) -> void:
@@ -44,10 +45,48 @@ func _physics_process(delta: float) -> void:
 		return
 	if live_powerup != null and not is_instance_valid(live_powerup):
 		live_powerup = null
+
 	_spawn_cd -= delta
 	if live_powerup == null and _spawn_cd <= 0.0 and extra_balls.size() < 4:
 		_spawn_powerup()
 		_spawn_cd = randf_range(5.5, 8.5)
+
+	# Dynamic Hydrodynamic Field Hazards
+	if game_mgr.rally_hits >= 4:
+		_hazard_cd -= delta
+		if _hazard_cd <= 0.0:
+			_spawn_fluid_hazard()
+			_hazard_cd = randf_range(6.0, 9.5)
+
+func _spawn_fluid_hazard() -> void:
+	if fluid_sim == null:
+		return
+	var hazard_type := randi() % 2
+	if hazard_type == 0:
+		# Center Arena Vortex
+		var vpos := Vector2(randf_range(820.0, 1100.0), randf_range(320.0, 760.0))
+		var swirl := randf_range(4.0, 7.0) * (1.0 if randf() > 0.5 else -1.0)
+		var col := Color(0.7, 0.4, 1.0, 0.6)
+		fluid_sim.inject_vortex(vpos, swirl, 140.0, col)
+		if vfx_mgr != null:
+			vfx_mgr.spawn_shockwave(vpos, col, 320.0, 0.5)
+			vfx_mgr.spawn_hit_burst(vpos, col, 1.4)
+		if game_mgr != null:
+			game_mgr.callout.emit("VORTEX", col)
+		if audio_mgr != null:
+			audio_mgr.trigger_sting(340.0, 0.35)
+	else:
+		# Mid-court Hydrodynamic Cross-Current
+		var cpos := Vector2(960.0, randf_range(280.0, 800.0))
+		var cdir := Vector2(0.0, 1.0 if randf() > 0.5 else -1.0) * randf_range(1600.0, 2400.0)
+		var col := Color(0.2, 0.9, 1.0, 0.55)
+		fluid_sim.inject_force(cpos, cdir, 160.0, col)
+		if vfx_mgr != null:
+			vfx_mgr.spawn_shockwave(cpos, col, 280.0, 0.4)
+		if game_mgr != null:
+			game_mgr.callout.emit("CURRENT", col)
+		if audio_mgr != null:
+			audio_mgr.trigger_sting(480.0, 0.3)
 
 func _spawn_powerup() -> void:
 	var p = preload("res://src/actors/powerup.gd").new()

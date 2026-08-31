@@ -30,6 +30,7 @@ var next_server := 0
 
 var is_ai_enabled := true
 var is_zen_mode := false
+var _serve_token := 0
 
 var ball: Ball
 var paddle_left: Paddle
@@ -198,15 +199,21 @@ func _on_goal_reached(scorer_id: int) -> void:
 	if paddle_right != null and scorer_id == 0:
 		paddle_right.add_momentum(0.12)
 
+	# Cleanly despawn any clone balls when a regulation goal or set ends
+	if chaos != null:
+		chaos.clear_point()
+
 	var set_ended := _maybe_finish_set()
 	if current_state == State.MATCH_OVER:
 		return
 
 	var server := 0 if scorer_id == 0 else 1
 	var pause := 1.15 if set_ended else 0.85
+	_serve_token += 1
+	var current_token := _serve_token
 	var timer := get_tree().create_timer(pause, true, false, true)
 	timer.timeout.connect(func():
-		if current_state != State.MATCH_OVER:
+		if current_state != State.MATCH_OVER and current_token == _serve_token:
 			start_serve(server)
 	)
 
@@ -300,16 +307,22 @@ func on_clone_goal(scorer_id: int) -> void:
 	if live.is_empty() and current_state != State.MATCH_OVER:
 		var server := 0 if scorer_id == 0 else 1
 		current_state = State.GOAL_SCORED
+		_serve_token += 1
+		var current_token := _serve_token
 		var timer := get_tree().create_timer(0.7, true, false, true)
 		timer.timeout.connect(func():
-			if current_state != State.MATCH_OVER:
+			if current_state != State.MATCH_OVER and current_token == _serve_token:
 				start_serve(server)
 		)
 	elif set_ended:
+		if chaos:
+			chaos.clear_point()
 		var server := 0 if scorer_id == 0 else 1
+		_serve_token += 1
+		var current_token := _serve_token
 		var timer := get_tree().create_timer(0.9, true, false, true)
 		timer.timeout.connect(func():
-			if current_state != State.MATCH_OVER:
+			if current_state != State.MATCH_OVER and current_token == _serve_token:
 				start_serve(server)
 		)
 

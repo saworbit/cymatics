@@ -7,6 +7,7 @@ layout(set = 0, binding = 0, rg32f) uniform readonly image2D velocity_read;
 layout(set = 0, binding = 1, rg32f) uniform writeonly image2D velocity_write;
 layout(set = 0, binding = 2, rg32f) uniform readonly image2D pressure;
 layout(set = 0, binding = 3, rgba16f) uniform readonly image2D dye_read;
+layout(set = 0, binding = 4, rgba16f) uniform writeonly image2D dye_write;
 
 layout(push_constant, std430) uniform ProjectParams {
     vec2 texel_size;
@@ -75,4 +76,5 @@ void main() {
     if (coord.y == 0 || coord.y == size.y - 1) vel.y = 0.0;
 
     imageStore(velocity_write, coord, vec4(vel, 0.0, 0.0));
+    imageStore(dye_write, coord, imageLoad(dye_read, coord));
 }
