@@ -1,12 +1,28 @@
 class_name Powerup
 extends Area2D
 
-enum Kind { MULTIBALL, GROW, TINY, STUN_ARM, MAGNET, FIREBALL, HYPER }
+enum Kind {
+	MULTIBALL,
+	GROW,
+	TINY,
+	STUN_ARM,
+	MAGNET,
+	FIREBALL,
+	HYPER,
+	BALL_TRI,
+	BALL_CUBE,
+	BALL_STAR,
+	BALL_RUGBY,
+	PADDLE_SCOOP,
+	PADDLE_WEDGE,
+	PADDLE_FORTRESS
+}
 
 signal collected(kind: Kind, hitter_id: int, ball: Ball)
 
 var kind: Kind = Kind.MULTIBALL
-var _life := 11.0
+var drift_velocity := Vector2.ZERO
+var _life := 12.0
 var _bob := 0.0
 var _consumed := false
 var _visual: ColorRect
@@ -20,6 +36,13 @@ const LABELS := {
 	Kind.MAGNET: "MAG",
 	Kind.FIREBALL: "FIRE",
 	Kind.HYPER: "HYPER",
+	Kind.BALL_TRI: "PRISM",
+	Kind.BALL_CUBE: "CUBE",
+	Kind.BALL_STAR: "STAR",
+	Kind.BALL_RUGBY: "BLOB",
+	Kind.PADDLE_SCOOP: "SCOOP",
+	Kind.PADDLE_WEDGE: "WEDGE",
+	Kind.PADDLE_FORTRESS: "AEGIS",
 }
 
 const COLORS := {
@@ -30,12 +53,19 @@ const COLORS := {
 	Kind.MAGNET: Color(0.4, 0.7, 1.0),
 	Kind.FIREBALL: Color(1.0, 0.4, 0.08),
 	Kind.HYPER: Color(1.0, 0.2, 0.35),
+	Kind.BALL_TRI: Color(0.25, 1.0, 0.85),
+	Kind.BALL_CUBE: Color(0.92, 0.35, 1.0),
+	Kind.BALL_STAR: Color(1.0, 0.88, 0.15),
+	Kind.BALL_RUGBY: Color(1.0, 0.32, 0.65),
+	Kind.PADDLE_SCOOP: Color(0.2, 0.95, 1.0),
+	Kind.PADDLE_WEDGE: Color(1.0, 0.6, 0.1),
+	Kind.PADDLE_FORTRESS: Color(0.85, 0.8, 1.0),
 }
 
 func _ready() -> void:
 	z_index = 9
 	collision_layer = 4
-	collision_mask = 1
+	collision_mask = 3 # Detects both Ball (1) and Paddle (2)
 	monitoring = true
 	monitorable = false
 	body_entered.connect(_on_body_entered)
@@ -46,9 +76,10 @@ func _ready() -> void:
 	add_child(cs)
 	_build_visual()
 
-func setup(p_kind: Kind, pos: Vector2) -> void:
+func setup(p_kind: Kind, pos: Vector2, p_drift: Vector2 = Vector2.ZERO) -> void:
 	kind = p_kind
 	global_position = pos
+	drift_velocity = p_drift
 	_refresh_visual()
 
 func _build_visual() -> void:
@@ -85,6 +116,11 @@ func _refresh_visual() -> void:
 func _process(delta: float) -> void:
 	_life -= delta
 	_bob += delta * 5.0
+	global_position += drift_velocity * delta
+	drift_velocity = drift_velocity.lerp(Vector2.ZERO, delta * 0.8)
+	global_position.x = clampf(global_position.x, 80.0, 1840.0)
+	global_position.y = clampf(global_position.y, 80.0, 1000.0)
+
 	if _visual != null:
 		_visual.position.y = -44.0 + sin(_bob) * 6.0
 		_visual.rotation += delta * 1.8
@@ -101,5 +137,11 @@ func _on_body_entered(body: Node) -> void:
 			return
 		_consumed = true
 		collected.emit(kind, b.last_hitter_id, b)
+		set_deferred("monitoring", false)
+		queue_free()
+	elif body is Paddle:
+		var p := body as Paddle
+		_consumed = true
+		collected.emit(kind, p.player_id, null)
 		set_deferred("monitoring", false)
 		queue_free()

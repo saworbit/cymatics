@@ -15,6 +15,8 @@ extends Node2D
 @onready var hud: HUD = $HUD
 
 var chaos
+var brick_matrix: BrickMatrix
+var tournament_mgr: TournamentManager
 var _display_mat: ShaderMaterial
 var _pulse := 0.0
 var _lock_zoom := 0.0
@@ -33,6 +35,11 @@ func _ready() -> void:
 	ball.set_paddles(paddle_left, paddle_right)
 	paddle_ai.setup(paddle_right, ball)
 
+	brick_matrix = preload("res://src/systems/brick_matrix.gd").new()
+	brick_matrix.name = "BrickMatrix"
+	add_child(brick_matrix)
+	brick_matrix.setup(fluid_sim, vfx_mgr, audio_mgr)
+
 	game_mgr.setup_references(ball, paddle_left, paddle_right, paddle_ai, vfx_mgr, audio_mgr)
 	chaos = preload("res://src/systems/chaos_director.gd").new()
 	chaos.name = "ChaosDirector"
@@ -41,7 +48,14 @@ func _ready() -> void:
 	game_mgr.chaos = chaos
 	paddle_ai.game_mgr = game_mgr
 	paddle_ai.chaos = chaos
-	hud.setup(game_mgr, paddle_left, paddle_right)
+
+	tournament_mgr = preload("res://src/systems/tournament_manager.gd").new()
+	tournament_mgr.name = "TournamentManager"
+	add_child(tournament_mgr)
+	tournament_mgr.setup(game_mgr, paddle_left, paddle_right, paddle_ai, brick_matrix, fluid_sim, vfx_mgr, audio_mgr, chaos)
+	game_mgr.tournament_mgr = tournament_mgr
+
+	hud.setup(game_mgr, paddle_left, paddle_right, tournament_mgr)
 
 	game_mgr.impact_pulse.connect(func(amt: float): _pulse = maxf(_pulse, amt))
 	game_mgr.serving_started.connect(func(_id: int): _lock_zoom = 0.0)
