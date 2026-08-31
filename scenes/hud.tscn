@@ -1,0 +1,253 @@
+[gd_scene format=3 uid="uid://e4xpv82ma71b9"]
+
+[ext_resource type="Script" path="res://src/systems/hud.gd" id="1_script"]
+[ext_resource type="Shader" path="res://shaders/vfx/frosted_glass.gdshader" id="2_shader"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_glass"]
+shader = ExtResource("2_shader")
+shader_parameter/blur_amount = 2.5
+shader_parameter/chromatic_dispersion = 0.0035
+shader_parameter/glass_tint = Color(0.04, 0.02, 0.08, 0.75)
+shader_parameter/corner_radius = 0.05
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_p1"]
+bg_color = Color(0, 0.9, 1, 0.8)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_p2"]
+bg_color = Color(1, 0, 0.67, 0.8)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[node name="HUD" type="CanvasLayer"]
+script = ExtResource("1_script")
+
+[node name="TopPanel" type="PanelContainer" parent="."]
+material = SubResource("ShaderMaterial_glass")
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -300.0
+offset_top = 20.0
+offset_right = 300.0
+offset_bottom = 110.0
+grow_horizontal = 2
+
+[node name="ScoreContainer" type="HBoxContainer" parent="TopPanel"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 40
+
+[node name="P1Score" type="Label" parent="TopPanel/ScoreContainer"]
+layout_mode = 2
+pivot_offset = Vector2(30, 25)
+theme_override_colors/font_color = Color(0, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 48
+text = "00"
+horizontal_alignment = 1
+
+[node name="SetsLabel" type="Label" parent="TopPanel/ScoreContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.8, 0.9, 1)
+theme_override_font_sizes/font_size = 20
+text = "SETS: 0 - 0"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="P2Score" type="Label" parent="TopPanel/ScoreContainer"]
+layout_mode = 2
+pivot_offset = Vector2(30, 25)
+theme_override_colors/font_color = Color(1, 0, 0.67, 1)
+theme_override_font_sizes/font_size = 48
+text = "00"
+horizontal_alignment = 1
+
+[node name="RallyContainer" type="Control" parent="TopPanel"]
+layout_mode = 2
+mouse_filter = 2
+
+[node name="RallyCount" type="Label" parent="TopPanel/RallyContainer"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -100.0
+offset_top = -25.0
+offset_right = 100.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_colors/font_color = Color(1, 0.85, 0.2, 1)
+theme_override_font_sizes/font_size = 15
+text = "RALLY: 0"
+horizontal_alignment = 1
+
+[node name="CenterContainer" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -400.0
+offset_top = -200.0
+offset_right = 400.0
+offset_bottom = -100.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="MilestoneBanner" type="Label" parent="CenterContainer"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -300.0
+offset_top = -30.0
+offset_right = 300.0
+offset_bottom = 30.0
+grow_horizontal = 2
+grow_vertical = 2
+pivot_offset = Vector2(300, 30)
+theme_override_colors/font_color = Color(1, 0.9, 0.4, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.8)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 36
+text = "— OVERDRIVE —"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="BottomPanel" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -90.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="P1Container" type="VBoxContainer" parent="BottomPanel"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 50.0
+offset_top = -70.0
+offset_right = 350.0
+offset_bottom = -20.0
+grow_vertical = 0
+
+[node name="P1Label" type="Label" parent="BottomPanel/P1Container"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 14
+text = "PADD"
+
+[node name="P1Momentum" type="ProgressBar" parent="BottomPanel/P1Container"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_p1")
+max_value = 100.0
+show_percentage = false
+
+[node name="P2Container" type="VBoxContainer" parent="BottomPanel"]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -350.0
+offset_top = -70.0
+offset_right = -50.0
+offset_bottom = -20.0
+grow_horizontal = 0
+grow_vertical = 0
+
+[node name="P2Label" type="Label" parent="BottomPanel/P2Container"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0, 0.67, 1)
+theme_override_font_sizes/font_size = 14
+text = "LIN"
+horizontal_alignment = 2
+
+[node name="P2Momentum" type="ProgressBar" parent="BottomPanel/P2Container"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_p2")
+max_value = 100.0
+show_percentage = false
+
+[node name="StatusContainer" type="VBoxContainer" parent="BottomPanel"]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -450.0
+offset_top = -70.0
+offset_right = 450.0
+offset_bottom = -15.0
+grow_horizontal = 2
+grow_vertical = 0
+alignment = 1
+
+[node name="AIStatus" type="Label" parent="BottomPanel/StatusContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.8, 0.9, 1)
+theme_override_font_sizes/font_size = 14
+text = "[T] AI: ON (Right)"
+horizontal_alignment = 1
+
+[node name="ControlsHelp" type="Label" parent="BottomPanel/StatusContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.5, 0.5, 0.6, 1)
+theme_override_font_sizes/font_size = 12
+text = "THAT'S A PADDLIN'  ·  Padd vs Lin  ·  mouse/WASD  ·  LMB stream  ·  RMB suck  ·  SPACE blast/stun/super  ·  [T] AI  [R] rematch   (codename CYMATICS)"
+horizontal_alignment = 1
+
+[node name="WinOverlay" type="Control" parent="."]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="WinPanel" type="PanelContainer" parent="WinOverlay"]
+material = SubResource("ShaderMaterial_glass")
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -350.0
+offset_top = -150.0
+offset_right = 350.0
+offset_bottom = 150.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="WinLabel" type="Label" parent="WinOverlay/WinPanel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.85, 0.2, 1)
+theme_override_font_sizes/font_size = 32
+text = "PLAYER 1 WINS THE MATCH!
+
+Press [R] to Play Again"
+horizontal_alignment = 1
+vertical_alignment = 1

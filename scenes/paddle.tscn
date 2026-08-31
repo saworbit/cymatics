@@ -1,0 +1,45 @@
+[gd_scene format=3 uid="uid://c8vqy32jx11m4"]
+
+[ext_resource type="Script" path="res://src/actors/paddle.gd" id="1_script"]
+[ext_resource type="Shader" path="res://shaders/vfx/dark_vortex.gdshader" id="2_shader"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_1"]
+size = Vector2(36, 140)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_vortex"]
+shader = ExtResource("2_shader")
+shader_parameter/swirl_strength = 4.0
+shader_parameter/radius = 0.5
+shader_parameter/active_factor = 0.0
+shader_parameter/vortex_tint = Color(0, 0.9, 1, 0.5)
+
+[node name="Paddle" type="CharacterBody2D"]
+collision_layer = 2
+collision_mask = 1
+script = ExtResource("1_script")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("RectangleShape2D_1")
+
+[node name="VisualGlow" type="ColorRect" parent="."]
+offset_left = -24.0
+offset_top = -80.0
+offset_right = 24.0
+offset_bottom = 80.0
+color = Color(0, 0.9, 1, 0.35)
+
+[node name="VisualCore" type="ColorRect" parent="."]
+offset_left = -12.0
+offset_top = -60.0
+offset_right = 12.0
+offset_bottom = 60.0
+pivot_offset = Vector2(12, 60)
+color = Color(1, 1, 1, 1)
+
+[node name="VortexVFX" type="ColorRect" parent="."]
+visible = false
+material = SubResource("ShaderMaterial_vortex")
+offset_left = -90.0
+offset_top = -90.0
+offset_right = 90.0
+offset_bottom = 90.0

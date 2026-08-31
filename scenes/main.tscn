@@ -1,0 +1,48 @@
+[gd_scene format=3 uid="uid://b2m3k56ny81q0"]
+
+[ext_resource type="Script" path="res://src/systems/main.gd" id="1_main_script"]
+[ext_resource type="Script" path="res://src/systems/fluid_simulator.gd" id="2_fluid_script"]
+[ext_resource type="Script" path="res://src/systems/vfx_manager.gd" id="3_vfx_script"]
+[ext_resource type="Script" path="res://src/systems/audio_manager.gd" id="4_audio_script"]
+[ext_resource type="Script" path="res://src/systems/game_manager.gd" id="5_game_script"]
+[ext_resource type="Script" path="res://src/actors/paddle_ai.gd" id="6_ai_script"]
+[ext_resource type="PackedScene" uid="uid://d4e7q21nx78p3" path="res://scenes/arena.tscn" id="7_arena_scene"]
+[ext_resource type="PackedScene" uid="uid://c8vqy32jx11m4" path="res://scenes/paddle.tscn" id="8_paddle_scene"]
+[ext_resource type="PackedScene" uid="uid://d3mql51ny89k1" path="res://scenes/ball.tscn" id="9_ball_scene"]
+[ext_resource type="PackedScene" uid="uid://e4xpv82ma71b9" path="res://scenes/hud.tscn" id="10_hud_scene"]
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_main_script")
+
+[node name="Camera2D" type="Camera2D" parent="."]
+position = Vector2(960, 540)
+
+[node name="FluidSimulator" type="Node" parent="."]
+script = ExtResource("2_fluid_script")
+
+[node name="AudioManager" type="Node" parent="."]
+script = ExtResource("4_audio_script")
+
+[node name="GameManager" type="Node" parent="."]
+script = ExtResource("5_game_script")
+
+[node name="PaddleAI" type="Node" parent="."]
+script = ExtResource("6_ai_script")
+
+[node name="Arena" parent="." instance=ExtResource("7_arena_scene")]
+
+[node name="PaddleLeft" parent="." instance=ExtResource("8_paddle_scene")]
+position = Vector2(180, 540)
+
+[node name="PaddleRight" parent="." instance=ExtResource("8_paddle_scene")]
+position = Vector2(1740, 540)
+player_id = 1
+
+[node name="Ball" parent="." instance=ExtResource("9_ball_scene")]
+position = Vector2(960, 540)
+
+[node name="VFXManager" type="Node2D" parent="."]
+z_index = 20
+script = ExtResource("3_vfx_script")
+
+[node name="HUD" parent="." instance=ExtResource("10_hud_scene")]

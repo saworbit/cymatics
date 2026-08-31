@@ -1,0 +1,25 @@
+* text=auto eol=lf
+
+*.gd text
+*.tscn text
+*.godot text
+*.gdshader text
+*.glsl text
+*.import text
+*.uid text
+*.md text
+*.yml text
+*.yaml text
+*.svg text
+*.cpp text
+*.txt text
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.wav binary
+*.ogg binary
+*.mp3 binary
+*.ttf binary
+*.otf binary

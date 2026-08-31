@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://1qtpmnlefs7p"
+path="res://.godot/imported/cymatics_divergence.glsl-8d4ebae01bb21b5791380e73e11170bd.res"
+
+[deps]
+
+source_file="res://shaders/compute/cymatics_divergence.glsl"
+dest_files=["res://.godot/imported/cymatics_divergence.glsl-8d4ebae01bb21b5791380e73e11170bd.res"]
+
+[params]
+

@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://kl4sl2a1epu1"
+path="res://.godot/imported/cymatics_project.glsl-d893407bcdb0ed26053951b5861f4abe.res"
+
+[deps]
+
+source_file="res://shaders/compute/cymatics_project.glsl"
+dest_files=["res://.godot/imported/cymatics_project.glsl-d893407bcdb0ed26053951b5861f4abe.res"]
+
+[params]
+

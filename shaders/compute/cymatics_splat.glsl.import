@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://b73etwd72iug4"
+path="res://.godot/imported/cymatics_splat.glsl-7ec39ebd2647ea90e0cb3c03b14400bf.res"
+
+[deps]
+
+source_file="res://shaders/compute/cymatics_splat.glsl"
+dest_files=["res://.godot/imported/cymatics_splat.glsl-7ec39ebd2647ea90e0cb3c03b14400bf.res"]
+
+[params]
+

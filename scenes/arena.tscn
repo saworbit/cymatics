@@ -1,0 +1,73 @@
+[gd_scene format=3 uid="uid://d4e7q21nx78p3"]
+
+[ext_resource type="Shader" path="res://shaders/cymatics_display.gdshader" id="1_display_shader"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_display"]
+shader = ExtResource("1_display_shader")
+shader_parameter/bloom_intensity = 1.15
+shader_parameter/chromatic_aberration = 1.6
+shader_parameter/vignette_strength = 0.48
+shader_parameter/film_grain = 0.025
+shader_parameter/background_color = Color(0.025, 0.012, 0.05, 1)
+shader_parameter/impact_pulse = 0.0
+shader_parameter/heat = 0.0
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_top"]
+size = Vector2(1920, 40)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_bottom"]
+size = Vector2(1920, 40)
+
+[node name="Arena" type="Node2D"]
+
+[node name="FluidDisplay" type="Sprite2D" parent="."]
+material = SubResource("ShaderMaterial_display")
+position = Vector2(960, 540)
+scale = Vector2(7.5, 7.5)
+
+[node name="BoundaryWalls" type="StaticBody2D" parent="."]
+collision_layer = 1
+collision_mask = 1
+
+[node name="CollisionTop" type="CollisionShape2D" parent="BoundaryWalls"]
+position = Vector2(960, 20)
+shape = SubResource("RectangleShape2D_top")
+
+[node name="CollisionBottom" type="CollisionShape2D" parent="BoundaryWalls"]
+position = Vector2(960, 1060)
+shape = SubResource("RectangleShape2D_bottom")
+
+[node name="WallTopVisual" type="ColorRect" parent="BoundaryWalls"]
+offset_right = 1920.0
+offset_bottom = 40.0
+color = Color(0.05, 0.02, 0.1, 0.92)
+
+[node name="WallBottomVisual" type="ColorRect" parent="BoundaryWalls"]
+offset_top = 1040.0
+offset_right = 1920.0
+offset_bottom = 1080.0
+color = Color(0.05, 0.02, 0.1, 0.92)
+
+[node name="CenterLine" type="Line2D" parent="."]
+points = PackedVector2Array(960, 48, 960, 1032)
+width = 3.0
+default_color = Color(0.55, 0.4, 0.9, 0.22)
+
+[node name="CenterDot" type="Line2D" parent="."]
+points = PackedVector2Array(948, 540, 972, 540)
+width = 12.0
+default_color = Color(0.7, 0.55, 1, 0.35)
+
+[node name="GoalGlowLeft" type="ColorRect" parent="."]
+offset_left = 0.0
+offset_top = 40.0
+offset_right = 14.0
+offset_bottom = 1040.0
+color = Color(0, 0.9, 1, 0.55)
+
+[node name="GoalGlowRight" type="ColorRect" parent="."]
+offset_left = 1906.0
+offset_top = 40.0
+offset_right = 1920.0
+offset_bottom = 1040.0
+color = Color(1, 0, 0.67, 0.55)

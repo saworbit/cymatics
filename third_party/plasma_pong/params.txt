@@ -1,0 +1,98 @@
+#This file is for changing input parameters manually
+#If you intend to change these values, it would be a good idea to keep a backup somewhere
+#
+#Optimization hints:
+#1)Lower the grid_res variable (Huge gain in performance)
+#2)Lower the iterations variable (Noticable gain in performance)
+#3)Lower the diffusion variable to 0.0 (Small gain in performance)
+#4)Lower max_particles variable to 0 (Small gain in performance)
+#
+#Note: Lowering these settings will result in a loss of quality
+
+
+#FLUID SOLVER PARAMETERS:
+
+#Start the game in fullscreen?
+fullscreen = 1
+
+#Fullscreen resolution
+full_res = 1024x768:32
+
+#Grid resolution
+grid_res = 105
+
+#Window resolution
+win_width = 800
+win_height = 600
+
+#Quality of the fluid's advection and diffusion
+iterations = 20
+
+#Speed of the simulation (in msec)
+timestep = 0.1
+
+#Diffusion rate
+diffusion = 0.0001
+
+#Density dissipation rate
+dissipation = 0.0
+
+#Viscosity
+viscosity = 0.0000
+
+#Turbulance (when vorticity confinement is enabled)
+turbulance = 3.0
+
+#Downward acceleration (when gravity is enabled)
+gravity_force = 0.01
+
+#Upward acceleration (when buoyancy is enabled)
+buoyancy_force = 0.001
+
+#Amount of force to apply when LMB is pressed
+velocity_force = 10.0
+
+#Amount of density to inject when RMB is pressed
+density_source = 1500.0
+
+#Jet force multiplier
+jet_force = 1.0
+
+#Maximum number of jets at a given time
+max_jets = 20
+
+#Maximum number of particles at a given time
+max_particles = 8000
+
+#Rate of emission for jets
+emitter_rate = 0.1
+
+#Size of blocks (when wall mode is enabled)
+block_size = 3
+
+
+#PONG GAME PARAMETERS
+
+#The maximum number of lives
+max_lives = 10
+
+#The width of the paddles
+paddle_width = 3
+
+#The height of the paddles
+paddle_height = 15
+
+#The force of the paddles' jets
+paddle_force = 70.0
+
+#The force of the paddles' suction
+paddle_suck = 40.0
+
+#The force of the paddles' blaster
+paddle_blast = 145.0
+
+#The top speed that the pong ball will reach
+ball_top_speed = 2.3
+
+#The initial acceleration of the ball through the fluid (high values make the ball more unpredictable)
+ball_accel = 1.0

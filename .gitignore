@@ -1,0 +1,43 @@
+# Godot 4
+.godot/
+*.translation
+.import/
+
+# Local agent / MCP (injected at runtime, not part of the game)
+.mcp/
+mcp_bridge.gd
+mcp_bridge.gd.uid
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Exports / build artifacts
+export/
+build/
+dist/
+*.apk
+*.aab
+*.ipa
+*.pck
+*.zip
+*.tar.gz
+
+# Original Plasma Pong binaries (copyrighted; we ship source only)
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Logs
+*.log
+logs/

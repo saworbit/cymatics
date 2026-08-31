@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bshdb8o7deyl1"
+path="res://.godot/imported/cymatics_pressure.glsl-d53978400467a7a1789fed551e370aa6.res"
+
+[deps]
+
+source_file="res://shaders/compute/cymatics_pressure.glsl"
+dest_files=["res://.godot/imported/cymatics_pressure.glsl-d53978400467a7a1789fed551e370aa6.res"]
+
+[params]
+

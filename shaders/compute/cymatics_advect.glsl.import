@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://cy6bh41cmy74w"
+path="res://.godot/imported/cymatics_advect.glsl-ecf70767a9ffd6f6d37ba34403241ac6.res"
+
+[deps]
+
+source_file="res://shaders/compute/cymatics_advect.glsl"
+dest_files=["res://.godot/imported/cymatics_advect.glsl-ecf70767a9ffd6f6d37ba34403241ac6.res"]
+
+[params]
+
