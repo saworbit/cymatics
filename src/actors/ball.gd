@@ -300,28 +300,47 @@ func _integrate_flight(delta: float) -> void:
 		velocity = Vector2.RIGHT * min_speed
 		speed = min_speed
 
-	# Fluid is spice: curve and a little aligned push. NEVER steal projectile speed.
+	# Continuous Hydrodynamic 2-Way Coupling
 	if fluid_sim != null:
 		var fluid_vel := fluid_sim.sample_velocity_at(global_position)
 		var curl := fluid_sim.sample_curl_at(global_position)
 		var heading := velocity / speed
+
+		# 1. Aerodynamic drag / fluid push
+		var rel_vel := fluid_vel - velocity * 0.25
 		var aligned := fluid_vel.dot(heading)
 		var lateral := fluid_vel - heading * aligned
-		velocity += lateral * (0.85 * delta)
-		spin = clampf(spin + curl * 0.04, -1.0, 1.0)
-		var mag_dir := Vector2(-heading.y, heading.x)
-		velocity += mag_dir * (spin * 280.0) * delta
-		if aligned > 0.0:
-			speed += minf(aligned, 900.0) * 0.05 * delta
+		velocity += lateral * (1.25 * delta)
+		if aligned > 50.0:
+			velocity += heading * (minf(aligned, 1200.0) * 0.15 * delta)
 
-		var trail_color := Color(1.0, 0.85, 0.2, 0.85)
+		# 2. Curl & Magnus lift effect
+		spin = clampf(spin + curl * (0.45 * delta), -1.0, 1.0)
+		spin = move_toward(spin, 0.0, delta * 0.18)
+		var mag_dir := Vector2(-heading.y, heading.x)
+		velocity += mag_dir * (spin * 440.0 * delta)
+
+		# 3. Bow shock and fluid wake injection
+		var wake_color := Color(1.0, 0.85, 0.2, 0.85)
 		if fireball_time > 0.0:
-			trail_color = Color(1.0, 0.25, 0.04, 1.0)
+			wake_color = Color(1.0, 0.25, 0.04, 1.0)
 		elif is_in_cymatic_lock:
-			trail_color = Color(1.0, 1.0, 1.0, 1.0)
+			wake_color = Color(1.0, 1.0, 1.0, 1.0)
 		elif is_in_overdrive:
-			trail_color = Color(1.0, 0.28, 0.05, 0.95)
-		fluid_sim.inject_dye(global_position, trail_color, radius * (2.4 + clampf((speed - 600.0) / 1000.0, 0.0, 1.6)))
+			wake_color = Color(1.0, 0.28, 0.05, 0.95)
+
+		if speed > 400.0:
+			var wake_force := heading * (speed * 0.9)
+			var wake_rad := radius * (2.2 + clampf((speed - 500.0) / 900.0, 0.0, 1.8))
+			fluid_sim.inject_force(global_position, wake_force, wake_rad, wake_color)
+
+			# Fast ball generates flanking von Kármán vortex eddies
+			if speed > 850.0:
+				var flank_offset := mag_dir * (radius * 1.5)
+				fluid_sim.inject_vortex(global_position + flank_offset, 3.5 * (speed / 1000.0), wake_rad * 0.8, wake_color)
+				fluid_sim.inject_vortex(global_position - flank_offset, -3.5 * (speed / 1000.0), wake_rad * 0.8, wake_color)
+		else:
+			fluid_sim.inject_dye(global_position, wake_color, radius * 2.0)
 
 	speed = velocity.length()
 	var floor_speed := min_speed + minf(rally_hits * 16.0, 140.0)
@@ -354,12 +373,12 @@ func _integrate_flight(delta: float) -> void:
 			emote(4, 0.35, "OW")
 
 func _handle_walls_and_goals() -> void:
-	if global_position.y < 54.0:
-		global_position.y = 54.0
+	if global_position.y < 58.0:
+		global_position.y = 58.0
 		velocity.y = absf(velocity.y) * bounce_damping
 		_squash = Vector2(1.25, 0.7)
-	elif global_position.y > 1026.0:
-		global_position.y = 1026.0
+	elif global_position.y > 1022.0:
+		global_position.y = 1022.0
 		velocity.y = -absf(velocity.y) * bounce_damping
 		_squash = Vector2(1.25, 0.7)
 
@@ -396,7 +415,8 @@ func _check_near_miss() -> void:
 	if paddle_left != null and velocity.x < 0.0 and global_position.x < paddle_left.global_position.x - 8.0:
 		if not _crossed_left:
 			_crossed_left = true
-			if absf(global_position.y - paddle_left.global_position.y) < 110.0:
+			var thresh_l := 70.0 * paddle_left.size_mod + 45.0
+			if absf(global_position.y - paddle_left.global_position.y) < thresh_l:
 				near_miss.emit(0, global_position)
 	elif velocity.x > 0.0:
 		_crossed_left = false
@@ -404,19 +424,28 @@ func _check_near_miss() -> void:
 	if paddle_right != null and velocity.x > 0.0 and global_position.x > paddle_right.global_position.x + 8.0:
 		if not _crossed_right:
 			_crossed_right = true
-			if absf(global_position.y - paddle_right.global_position.y) < 110.0:
+			var thresh_r := 70.0 * paddle_right.size_mod + 45.0
+			if absf(global_position.y - paddle_right.global_position.y) < thresh_r:
 				near_miss.emit(1, global_position)
 	elif velocity.x < 0.0:
 		_crossed_right = false
 
 func _handle_paddle_collision(paddle: Paddle, _normal: Vector2) -> void:
+	# Directional debounce: Ignore if ball is already moving away from this paddle
+	if paddle.player_id == 0 and velocity.x > 40.0:
+		return
+	elif paddle.player_id == 1 and velocity.x < -40.0:
+		return
+
 	rally_hits += 1
 	last_hitter_id = paddle.player_id
 	touch_mask |= (1 << paddle.player_id)
 	if paddle.player_id == 0:
 		_crossed_left = false
+		global_position.x = maxf(global_position.x, paddle.global_position.x + 28.0)
 	else:
 		_crossed_right = false
+		global_position.x = minf(global_position.x, paddle.global_position.x - 28.0)
 
 	var hit_offset := clampf((global_position.y - paddle.global_position.y) / 70.0, -1.0, 1.0)
 	var forward_dir := Vector2.RIGHT if paddle.player_id == 0 else Vector2.LEFT
@@ -436,9 +465,9 @@ func _handle_paddle_collision(paddle: Paddle, _normal: Vector2) -> void:
 	last_hit_was_perfect = perfect
 	if perfect:
 		speed_boost += 0.22
-		spin = clampf(-hit_offset * 1.2 + paddle.velocity.y * 0.003, -1.0, 1.0)
+		spin = clampf(-hit_offset * 1.4 + paddle.velocity.y * 0.004, -1.0, 1.0)
 	else:
-		spin = clampf(-hit_offset * 0.75 + paddle.velocity.y * 0.002, -1.0, 1.0)
+		spin = clampf(-hit_offset * 0.85 + paddle.velocity.y * 0.002, -1.0, 1.0)
 
 	var out_speed := minf(incoming * speed_boost + 48.0, _rally_speed_cap())
 	velocity = out_dir * out_speed
@@ -446,7 +475,8 @@ func _handle_paddle_collision(paddle: Paddle, _normal: Vector2) -> void:
 	_squash = Vector2(0.55, 1.45)
 
 	if fluid_sim != null:
-		fluid_sim.inject_force(global_position, out_dir * (2200.0 if perfect else 1600.0), 80.0 if perfect else 64.0, paddle.team_color)
+		fluid_sim.inject_force(global_position, out_dir * (2600.0 if perfect else 1900.0), 90.0 if perfect else 72.0, paddle.team_color)
+		fluid_sim.inject_vortex(global_position, spin * 5.0, 80.0, paddle.team_color)
 
 	if vfx_mgr != null:
 		var burst_scale := 2.4 if perfect else (1.7 + minf(rally_hits * 0.08, 1.2))

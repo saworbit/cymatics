@@ -16,9 +16,10 @@ void fragment() {
     float mask = smoothstep(radius - width, radius, dist) - smoothstep(radius, radius + width, dist);
     mask = max(mask, 0.0);
 
-    // Screen UV refraction displacement with chromatic shift
+    // Screen UV refraction displacement with chromatic shift and aspect ratio correction
     vec2 dir = (dist > 0.0001) ? normalize(uv) : vec2(0.0);
-    vec2 refract_offset = dir * mask * distortion_strength * (1.0 - progress);
+    vec2 aspect_correction = vec2(SCREEN_PIXEL_SIZE.y / max(SCREEN_PIXEL_SIZE.x, 0.0001), 1.0);
+    vec2 refract_offset = dir * mask * distortion_strength * (1.0 - progress) * aspect_correction;
     
     float r = texture(screen_texture, SCREEN_UV + refract_offset * 1.2).r;
     float g = texture(screen_texture, SCREEN_UV + refract_offset).g;

@@ -20,7 +20,9 @@ void fragment() {
         warped_uv = rot_uv + vec2(0.5);
     }
 
-    vec3 scene = texture(screen_texture, SCREEN_UV + (warped_uv - UV) * 0.25).rgb;
+    vec2 aspect_correction = vec2(SCREEN_PIXEL_SIZE.y / max(SCREEN_PIXEL_SIZE.x, 0.0001), 1.0);
+    vec2 offset = (warped_uv - UV) * 0.25 * aspect_correction;
+    vec3 scene = texture(screen_texture, SCREEN_UV + offset).rgb;
     
     // Accretion disk edge glow
     float ring = smoothstep(0.15, 0.08, dist) * smoothstep(0.02, 0.08, dist) * active_factor;

@@ -100,15 +100,18 @@ func _evaluate_tactics() -> void:
 		predicted_y += randf_range(-error, error)
 		_target_pos = Vector2(paddle.max_x - 36.0, clampf(predicted_y, 110.0, 970.0))
 
-		# Build rallies: return first, blast later.
+		# Build rallies: suction slingshots, stream deflections, and tactical blasts
 		if paddle.armed_time > 0.0 and vertical < 90.0 and randf() < 0.35:
 			_intent_blast = true
-		elif dist < 200.0 and vertical < 80.0 and track.rally_hits >= 4 and randf() < 0.12 * difficulty:
+		elif dist < 180.0 and paddle.is_sucking and randf() < 0.45 * difficulty:
+			# Slingshot release from suction orbit
 			_intent_blast = true
-		elif dist > 280.0 and dist < 760.0 and vertical > 55.0:
+		elif dist < 220.0 and vertical < 80.0 and track.rally_hits >= 3 and randf() < 0.18 * difficulty:
+			_intent_blast = true
+		elif dist > 260.0 and dist < 780.0 and vertical > 40.0:
 			_intent_suck = true
-		elif dist < 380.0 and vertical < 130.0:
-			_intent_shoot = randf() < 0.35
+		elif dist < 420.0 and vertical < 140.0:
+			_intent_shoot = randf() < 0.42
 	else:
 		_target_pos = Vector2(paddle.min_x + 70.0, clampf(ball_pos.y + randf_range(-error, error), 180.0, 900.0))
 		if ball_pos.x < paddle.global_position.x and vertical < 150.0 and ball_vel.x < -80.0:

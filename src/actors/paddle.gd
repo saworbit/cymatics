@@ -282,8 +282,10 @@ func _physics_process(delta: float) -> void:
 		is_shooting = false
 		is_sucking = false
 
+	var cur_min_y := 40.0 + 70.0 * size_mod + 4.0
+	var cur_max_y := 1040.0 - 70.0 * size_mod - 4.0
 	global_position.x = clampf(global_position.x, min_x, max_x)
-	global_position.y = clampf(global_position.y, min_y, max_y)
+	global_position.y = clampf(global_position.y, cur_min_y, cur_max_y)
 
 	_apply_hydro(delta)
 	_update_visuals(delta)
@@ -313,29 +315,27 @@ func _handle_player_input(delta: float) -> void:
 				else:
 					trigger_blast(1.0)
 
+	var accel := 7800.0
+	var friction := 6200.0
+
 	# Mouse is the Plasma Pong feel for P1. Use play-space coords so camera shake
 	# does not look like the cursor moved.
 	if player_id == 0:
 		var mouse := _play_mouse()
-		var in_zone := mouse.x >= 0.0 and mouse.x <= max_x + 120.0 and mouse.y >= min_y and mouse.y <= max_y
-		if in_zone and mouse.distance_to(_last_mouse) > 3.0:
-			_mouse_control = true
-		if input_dir.length() > 0.25 or not in_zone:
-			_mouse_control = false
-		_last_mouse = mouse
-		if _mouse_control:
-			var target := Vector2(clampf(mouse.x, min_x, max_x), clampf(mouse.y, min_y, max_y))
-			var to_t := target - global_position
-			velocity = to_t * 14.0
-			velocity = velocity.limit_length(speed * 1.25)
+		var cur_min_y := 40.0 + 70.0 * size_mod + 4.0
+		var cur_max_y := 1040.0 - 70.0 * size_mod - 4.0
+		var in_zone := mouse.x >= 0.0 and mouse.x <= max_x + 140.0 and mouse.y >= cur_min_y - 60.0 and mouse.y <= cur_max_y + 60.0
+		if in_zone and (mouse - global_position).length() > 6.0:
+			var target := Vector2(clampf(mouse.x, min_x, max_x), clampf(mouse.y, cur_min_y, cur_max_y))
+			var diff := target - global_position
+			var follow_speed := maxf(speed * 1.35, diff.length() * 18.0)
+			velocity = velocity.move_toward(diff.normalized() * minf(diff.length() * 26.0, follow_speed), accel * 1.5 * delta)
 			move_and_slide()
 			return
 
-	var accel := 7800.0
-	var friction := 6200.0
-	var desired := input_dir * speed
-	if input_dir.length() > 0.12:
-		velocity = velocity.move_toward(desired, accel * delta)
+	if input_dir.length() > 0.05:
+		var target_vel := input_dir.normalized() * speed
+		velocity = velocity.move_toward(target_vel, accel * delta)
 	else:
 		velocity = velocity.move_toward(Vector2.ZERO, friction * delta)
 	move_and_slide()
@@ -344,11 +344,8 @@ func _play_mouse() -> Vector2:
 	var vp := get_viewport()
 	if vp == null:
 		return Vector2(960, 540)
-	var rect := vp.get_visible_rect().size
-	if rect.x < 1.0 or rect.y < 1.0:
-		return Vector2(960, 540)
 	var p := vp.get_mouse_position()
-	return Vector2(p.x / rect.x * 1920.0, p.y / rect.y * 1080.0)
+	return Vector2(clampf(p.x, 0.0, 1920.0), clampf(p.y, 0.0, 1080.0))
 
 func try_serve() -> bool:
 	if ball == null or not is_instance_valid(ball):
@@ -370,7 +367,7 @@ func _apply_hydro(delta: float) -> void:
 	var nozzle_pos := global_position + forward_dir * 40.0
 
 	if velocity.length() > 40.0 and fluid_sim != null:
-		fluid_sim.inject_force(global_position, velocity.normalized() * 700.0, 32.0, Color(team_color.r, team_color.g, team_color.b, 0.28))
+		fluid_sim.inject_force(global_position, velocity.normalized() * 750.0, 36.0, Color(team_color.r, team_color.g, team_color.b, 0.28))
 		if audio_mgr != null:
 			audio_mgr.register_paddle_movement(velocity.length(), global_position.x / 1920.0)
 
@@ -379,7 +376,7 @@ func _apply_hydro(delta: float) -> void:
 
 	if is_shooting and fluid_sim != null:
 		var stream_dir := (forward_dir + Vector2(0, velocity.y * 0.0008)).normalized()
-		fluid_sim.inject_force(nozzle_pos, stream_dir * shoot_force, 48.0, Color(team_color.r, team_color.g, team_color.b, 0.55))
+		fluid_sim.inject_force(nozzle_pos, stream_dir * (shoot_force * mag), 56.0 * mag, Color(team_color.r, team_color.g, team_color.b, 0.65))
 		for node in balls:
 			if node is Ball:
 				var b := node as Ball
@@ -387,23 +384,29 @@ func _apply_hydro(delta: float) -> void:
 					continue
 				var to_ball := b.global_position - global_position
 				var in_front := (to_ball.x * forward_dir.x) > 0.0
-				if in_front and to_ball.length() < 640.0 * mag and absf(to_ball.y) < 110.0 * size_mod:
-					b.apply_impulse(stream_dir, 520.0 * mag * delta)
+				if in_front and to_ball.length() < 680.0 * mag and absf(to_ball.y) < 130.0 * size_mod:
+					var jet_push := stream_dir * (620.0 * mag * delta)
+					b.apply_impulse(jet_push.normalized(), jet_push.length())
+					b.spin = clampf(b.spin + (stream_dir.y * 0.4 * delta), -1.0, 1.0)
 		_action_glow = 1.0
 		if _beam:
 			_beam.visible = true
-			_beam_mat.set_shader_parameter("intensity", 1.15 * mag)
+			_beam_mat.set_shader_parameter("intensity", 1.25 * mag)
 	else:
 		if _beam:
 			_beam.visible = false
 
 	if is_sucking and fluid_sim != null:
-		fluid_sim.inject_force(nozzle_pos, -forward_dir * suck_force * mag, 88.0 * mag, Color(team_color.r, team_color.g, team_color.b, 0.4))
+		var swirl_dir := 4.5 if player_id == 0 else -4.5
+		fluid_sim.inject_force(nozzle_pos, -forward_dir * (suck_force * mag), 96.0 * mag, Color(team_color.r, team_color.g, team_color.b, 0.45))
+		fluid_sim.inject_vortex(nozzle_pos, swirl_dir * mag, 110.0 * mag, team_color)
+
 		if vortex_vfx != null:
 			vortex_vfx.visible = true
 			if vortex_vfx.material is ShaderMaterial:
 				(vortex_vfx.material as ShaderMaterial).set_shader_parameter("active_factor", 1.0)
 				(vortex_vfx.material as ShaderMaterial).set_shader_parameter("vortex_tint", team_color)
+
 		for node in balls:
 			if node is Ball:
 				var b := node as Ball
@@ -411,9 +414,19 @@ func _apply_hydro(delta: float) -> void:
 					continue
 				var to_paddle := nozzle_pos - b.global_position
 				var in_front := (to_paddle.x * -forward_dir.x) > 0.0
-				if in_front and to_paddle.length() < 700.0 * mag:
-					var pull := clampf(1.0 - to_paddle.length() / (700.0 * mag), 0.25, 1.0) * 1100.0 * mag
-					b.apply_impulse(to_paddle.normalized(), pull * delta)
+				var dist := to_paddle.length()
+
+				if in_front and dist < 720.0 * mag:
+					# Inward gravitational pull
+					var pull_strength := clampf(1.0 - dist / (720.0 * mag), 0.2, 1.0) * 1250.0 * mag
+					b.apply_impulse(to_paddle.normalized(), pull_strength * delta)
+
+					# Orbital swirl capture when close to nozzle (Plasma Pong slingshot orbit)
+					if dist < 210.0 * mag:
+						var orbit_tangent := Vector2(-to_paddle.y, to_paddle.x).normalized() * (1.0 if player_id == 0 else -1.0)
+						b.apply_impulse(orbit_tangent, 1350.0 * mag * delta)
+						b.spin = clampf(b.spin + (2.5 if player_id == 0 else -2.5) * delta, -1.0, 1.0)
+
 		_action_glow = 1.0
 	else:
 		if vortex_vfx != null:
@@ -433,10 +446,11 @@ func trigger_blast(strength: float = 1.0) -> void:
 	var power := clampf(strength, 0.5, 1.4)
 
 	if fluid_sim != null:
-		fluid_sim.inject_force(blast_pos, forward_dir * (3200.0 * power), 120.0, Color(1, 1, 1, 0.9))
+		fluid_sim.inject_force(blast_pos, forward_dir * (3600.0 * power), 130.0, Color(1, 1, 1, 0.95))
+		fluid_sim.inject_vortex(blast_pos, (3.0 if player_id == 0 else -3.0) * power, 100.0, team_color)
 
 	if vfx_mgr != null:
-		vfx_mgr.spawn_shockwave(blast_pos, team_color, 420.0 * power, 0.4)
+		vfx_mgr.spawn_shockwave(blast_pos, team_color, 440.0 * power, 0.4)
 		vfx_mgr.spawn_hit_burst(blast_pos, team_color, 1.6 * power)
 		vfx_mgr.apply_camera_kick(forward_dir, 0.85 * power)
 
@@ -451,8 +465,10 @@ func trigger_blast(strength: float = 1.0) -> void:
 			if b.is_scored or b.is_serving:
 				continue
 			var to_ball := b.global_position - global_position
-			if (to_ball.x * forward_dir.x) > 0.0 and to_ball.length() < 240.0:
-				b.apply_impulse(forward_dir + Vector2(0, to_ball.y * 0.002), 640.0 * power)
+			if (to_ball.x * forward_dir.x) > 0.0 and to_ball.length() < 280.0:
+				var blast_aim := (forward_dir + Vector2(0, to_ball.y * 0.003)).normalized()
+				b.apply_impulse(blast_aim, 820.0 * power)
+				b.spin = clampf(b.spin + (to_ball.y * -0.005), -1.0, 1.0)
 				hit_any = true
 	if not hit_any and stun_cooldown <= 0.0:
 		fire_stun_bolt()

@@ -18,14 +18,21 @@ void fragment() {
     float r = texture(TEXTURE, uv + vec2(aberration, 0.0)).r;
     float g = dye_sample.g;
     float b = texture(TEXTURE, uv - vec2(aberration, 0.0)).b;
-    vec3 split_color = vec3(r, g, b) * (1.15 + heat * 0.35);
+    vec3 split_color = vec3(r, g, b) * (1.18 + heat * 0.4);
+
+    // Filament streamline contour luminance
+    vec2 duv = vec2(1.0 / 256.0, 1.0 / 144.0);
+    float dx = length(texture(TEXTURE, uv + vec2(duv.x, 0.0)).rgb) - length(texture(TEXTURE, uv - vec2(duv.x, 0.0)).rgb);
+    float dy = length(texture(TEXTURE, uv + vec2(0.0, duv.y)).rgb) - length(texture(TEXTURE, uv - vec2(0.0, duv.y)).rgb);
+    float filament_edge = clamp(length(vec2(dx, dy)) * 4.5, 0.0, 1.0);
 
     float luma = dot(split_color, vec3(0.3, 0.5, 0.2));
-    vec3 bloom = split_color * bloom_intensity * smoothstep(0.12, 0.55, luma);
+    vec3 bloom = split_color * bloom_intensity * smoothstep(0.10, 0.50, luma);
+    vec3 contour = vec3(0.9, 0.95, 1.0) * filament_edge * (0.35 + heat * 0.45);
 
-    float dye_mask = clamp(max(dye_sample.a, intensity) * 1.35, 0.0, 1.0);
+    float dye_mask = clamp(max(dye_sample.a, intensity) * 1.45, 0.0, 1.0);
     vec3 void_col = background_color * (1.0 + heat * 0.35);
-    vec3 composite = mix(void_col, split_color + bloom, dye_mask);
+    vec3 composite = mix(void_col, split_color + bloom + contour, dye_mask);
 
     float vig = 1.0 - dot(uv - 0.5, uv - 0.5) * (vignette_strength * 2.15);
     composite *= clamp(vig, 0.0, 1.0);

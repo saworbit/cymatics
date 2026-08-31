@@ -3,6 +3,7 @@ extends Node
 
 ## GPU Fluid Simulator for Godot 4.7.2+ using RenderingDevice compute shaders.
 ## Implements Jos Stam's Stable Fluids with Vorticity Confinement & Viscoelastic Filaments.
+## Provides real-time continuous hydrodynamic force & curl coupling for ball flight and paddle combat.
 
 signal step_completed(frame_index: int)
 
@@ -51,12 +52,16 @@ var display_texture: Texture2DRD
 var _pending_splats: Array[Dictionary] = []
 var _average_kinetic_energy := 200.0
 
+# Active hydrodynamic emitters for continuous 2-way physics coupling
+var _active_flow_nodes: Array[Dictionary] = []
+
 var _cpu_fallback := false
 var _cpu_vel_x: PackedFloat32Array
 var _cpu_vel_y: PackedFloat32Array
 var _cpu_dye_r: PackedFloat32Array
 var _cpu_dye_g: PackedFloat32Array
 var _cpu_dye_b: PackedFloat32Array
+var _cpu_byte_buffer: PackedByteArray
 var _cpu_image: Image
 var _cpu_texture: ImageTexture
 
@@ -129,7 +134,8 @@ func _init_compute_pipeline() -> bool:
 		us_splat.append(_create_uniform_set(shader_splat, [tex_velocity[r], tex_velocity[w], tex_dye[r], tex_dye[w]]))
 		us_divergence.append(_create_uniform_set(shader_divergence, [tex_velocity[r], tex_divergence]))
 		us_pressure.append(_create_uniform_set(shader_pressure, [tex_pressure[r], tex_pressure[w], tex_divergence]))
-		us_project.append(_create_uniform_set(shader_project, [tex_velocity[r], tex_velocity[w], tex_pressure[r], tex_dye[r]]))
+		# Jacobi iteration 19 always outputs converged pressure to tex_pressure[0]
+		us_project.append(_create_uniform_set(shader_project, [tex_velocity[r], tex_velocity[w], tex_pressure[0], tex_dye[r], tex_dye[w]]))
 
 	display_texture = Texture2DRD.new()
 	display_texture.texture_rd_rid = tex_dye[0]
@@ -211,7 +217,9 @@ func _init_cpu_fallback() -> void:
 	_cpu_dye_g.fill(0.0)
 	_cpu_dye_b.fill(0.0)
 
-	_cpu_image = Image.create(grid_size.x, grid_size.y, false, Image.FORMAT_RGBA8)
+	_cpu_byte_buffer.resize(cell_count * 4)
+	_cpu_byte_buffer.fill(0)
+	_cpu_image = Image.create_from_data(grid_size.x, grid_size.y, false, Image.FORMAT_RGBA8, _cpu_byte_buffer)
 	_cpu_texture = ImageTexture.create_from_image(_cpu_image)
 
 func inject_force(world_pos: Vector2, force: Vector2, radius_px: float, color: Color) -> void:
@@ -226,7 +234,41 @@ func inject_force(world_pos: Vector2, force: Vector2, radius_px: float, color: C
 		"strength": 1.0
 	})
 	
+	# Register active flow node for continuous hydrodynamic interaction
+	if force.length_squared() > 100.0:
+		_active_flow_nodes.append({
+			"pos": world_pos,
+			"vel": force,
+			"radius": radius_px,
+			"life": 0.45,
+			"decay": 2.2,
+			"vorticity": 0.0
+		})
+	
 	_average_kinetic_energy = clampf(_average_kinetic_energy + force.length() * 0.15, 50.0, 8000.0)
+
+func inject_vortex(world_pos: Vector2, swirl_strength: float, radius_px: float, color: Color) -> void:
+	var norm_pos := Vector2(world_pos.x / 1920.0, world_pos.y / 1080.0)
+	var norm_rad := radius_px / 1920.0
+	
+	# Inject a circular velocity couple into the compute shader
+	var tang := Vector2(-norm_pos.y + 0.5, norm_pos.x - 0.5).normalized() * (swirl_strength * 0.03)
+	_pending_splats.append({
+		"point": norm_pos,
+		"force": tang,
+		"color": color,
+		"radius": norm_rad,
+		"strength": 1.0
+	})
+	
+	_active_flow_nodes.append({
+		"pos": world_pos,
+		"vel": Vector2.ZERO,
+		"radius": radius_px,
+		"life": 0.6,
+		"decay": 1.6,
+		"vorticity": swirl_strength
+	})
 
 func inject_dye(world_pos: Vector2, color: Color, radius_px: float) -> void:
 	inject_force(world_pos, Vector2.ZERO, radius_px, color)
@@ -238,23 +280,38 @@ func sample_velocity_at(world_pos: Vector2) -> Vector2:
 		var idx := gy * grid_size.x + gx
 		return Vector2(_cpu_vel_x[idx], _cpu_vel_y[idx]) * 20.0
 	
-	var norm_pos := Vector2(world_pos.x / 1920.0, world_pos.y / 1080.0)
-	var vel_est := Vector2.ZERO
-	for splat in _pending_splats:
-		var delta: Vector2 = norm_pos - splat["point"]
-		var dist_sq := delta.length_squared()
-		var rad_sq: float = splat["radius"] * splat["radius"]
-		if dist_sq < rad_sq * 4.0:
-			var inf: float = exp(-dist_sq / maxf(rad_sq, 0.0001))
-			vel_est += splat["force"] * inf * 20.0
-	return vel_est
+	var vel_total := Vector2.ZERO
+	for node in _active_flow_nodes:
+		var delta: Vector2 = world_pos - node["pos"]
+		var dist := delta.length()
+		var r: float = node["radius"]
+		if dist < r * 2.5:
+			var inf: float = exp(-(dist * dist) / maxf(r * r, 1.0)) * (node["life"] / 0.45)
+			# Linear momentum
+			vel_total += (node["vel"] as Vector2) * (inf * 0.65)
+			# Vortex angular velocity
+			var vort: float = node["vorticity"]
+			if absf(vort) > 0.01 and dist > 4.0:
+				var tang := Vector2(-delta.y, delta.x).normalized()
+				vel_total += tang * (vort * inf * 0.8)
+	return vel_total
 
 func sample_curl_at(world_pos: Vector2) -> float:
-	var v_up := sample_velocity_at(world_pos + Vector2(0, -16))
-	var v_down := sample_velocity_at(world_pos + Vector2(0, 16))
-	var v_left := sample_velocity_at(world_pos + Vector2(-16, 0))
-	var v_right := sample_velocity_at(world_pos + Vector2(16, 0))
-	return 0.5 * ((v_right.y - v_left.y) - (v_down.x - v_up.x))
+	var curl_total := 0.0
+	for node in _active_flow_nodes:
+		var delta: Vector2 = world_pos - node["pos"]
+		var dist := delta.length()
+		var r: float = node["radius"]
+		if dist < r * 2.5:
+			var inf: float = exp(-(dist * dist) / maxf(r * r, 1.0))
+			curl_total += (node["vorticity"] as float) * inf * (node["life"] / 0.45)
+	
+	var v_up := sample_velocity_at(world_pos + Vector2(0, -20))
+	var v_down := sample_velocity_at(world_pos + Vector2(0, 20))
+	var v_left := sample_velocity_at(world_pos + Vector2(-20, 0))
+	var v_right := sample_velocity_at(world_pos + Vector2(20, 0))
+	var field_curl := 0.5 * ((v_right.y - v_left.y) - (v_down.x - v_up.x)) / 20.0
+	return clampf(curl_total + field_curl * 0.4, -4.0, 4.0)
 
 func get_average_kinetic_energy() -> float:
 	return _average_kinetic_energy
@@ -262,6 +319,14 @@ func get_average_kinetic_energy() -> float:
 func step_simulation(delta: float) -> void:
 	frame_counter += 1
 	_average_kinetic_energy = lerpf(_average_kinetic_energy, 100.0, 0.02)
+
+	# Update active flow nodes lifecycle
+	var kept_nodes: Array[Dictionary] = []
+	for node in _active_flow_nodes:
+		node["life"] -= delta * node["decay"]
+		if node["life"] > 0.0:
+			kept_nodes.append(node)
+	_active_flow_nodes = kept_nodes
 
 	if not is_compute_ready:
 		_step_cpu_fallback(delta)
@@ -273,11 +338,39 @@ func step_simulation(delta: float) -> void:
 	var groups_x := int(ceil(grid_size.x / 8.0))
 	var groups_y := int(ceil(grid_size.y / 8.0))
 
+	# 1. Force & Dye Splatting Pass (Applied ONCE per frame)
+	if _pending_splats.size() > 0:
+		for splat in _pending_splats:
+			var r := p_idx
+			var w := 1 - p_idx
+			var list := rd.compute_list_begin()
+			rd.compute_list_bind_compute_pipeline(list, pipe_splat)
+			rd.compute_list_bind_uniform_set(list, us_splat[r], 0)
+
+			var pt: Vector2 = splat["point"]
+			var frc: Vector2 = splat["force"]
+			var col: Color = splat["color"]
+			var pc_splat := PackedFloat32Array([
+				pt.x, pt.y,
+				frc.x, frc.y,
+				col.r, col.g, col.b, col.a,
+				splat["radius"],
+				splat["strength"]
+			]).to_byte_array()
+			rd.compute_list_set_push_constant(list, pc_splat, pc_splat.size())
+			rd.compute_list_dispatch(list, groups_x, groups_y, 1)
+			rd.compute_list_end()
+
+			p_idx = w
+
+	_pending_splats.clear()
+
+	# 2. Sub-stepped Navier-Stokes Simulation
 	for s in range(sub_steps):
 		var r := p_idx
 		var w := 1 - p_idx
 
-		# 1. Advection Pass
+		# 2a. Advection Pass
 		var list := rd.compute_list_begin()
 		rd.compute_list_bind_compute_pipeline(list, pipe_advect)
 		rd.compute_list_bind_uniform_set(list, us_advect[r], 0)
@@ -294,32 +387,7 @@ func step_simulation(delta: float) -> void:
 		r = p_idx
 		w = 1 - p_idx
 
-		# 2. Force & Dye Splatting Pass
-		if _pending_splats.size() > 0:
-			for splat in _pending_splats:
-				list = rd.compute_list_begin()
-				rd.compute_list_bind_compute_pipeline(list, pipe_splat)
-				rd.compute_list_bind_uniform_set(list, us_splat[r], 0)
-
-				var pt: Vector2 = splat["point"]
-				var frc: Vector2 = splat["force"]
-				var col: Color = splat["color"]
-				var pc_splat := PackedFloat32Array([
-					pt.x, pt.y,
-					frc.x, frc.y,
-					col.r, col.g, col.b, col.a,
-					splat["radius"],
-					splat["strength"]
-				]).to_byte_array()
-				rd.compute_list_set_push_constant(list, pc_splat, pc_splat.size())
-				rd.compute_list_dispatch(list, groups_x, groups_y, 1)
-				rd.compute_list_end()
-
-				p_idx = w
-				r = p_idx
-				w = 1 - p_idx
-
-		# 3. Divergence Pass
+		# 2b. Divergence Pass
 		list = rd.compute_list_begin()
 		rd.compute_list_bind_compute_pipeline(list, pipe_divergence)
 		rd.compute_list_bind_uniform_set(list, us_divergence[r], 0)
@@ -328,7 +396,7 @@ func step_simulation(delta: float) -> void:
 		rd.compute_list_dispatch(list, groups_x, groups_y, 1)
 		rd.compute_list_end()
 
-		# 4. Jacobi Pressure Solve
+		# 2c. Jacobi Pressure Solve (20 ping-pong iterations, ends on tex_pressure[0])
 		var p_read := 0
 		var p_write := 1
 		for j in range(jacobi_iterations):
@@ -340,7 +408,7 @@ func step_simulation(delta: float) -> void:
 			p_read = 1 - p_read
 			p_write = 1 - p_write
 
-		# 5. Projection & Vorticity Pass
+		# 2d. Projection & Vorticity Pass (reads converged tex_pressure[0])
 		list = rd.compute_list_begin()
 		rd.compute_list_bind_compute_pipeline(list, pipe_project)
 		rd.compute_list_bind_uniform_set(list, us_project[r], 0)
@@ -355,8 +423,6 @@ func step_simulation(delta: float) -> void:
 		rd.compute_list_end()
 
 		p_idx = w
-
-	_pending_splats.clear()
 
 	if display_texture.texture_rd_rid != tex_dye[p_idx]:
 		display_texture.texture_rd_rid = tex_dye[p_idx]
@@ -390,8 +456,6 @@ func _step_cpu_fallback(_delta: float) -> void:
 					_cpu_dye_g[idx] = clampf(_cpu_dye_g[idx] + col.g * inf * col.a, 0.0, 1.0)
 					_cpu_dye_b[idx] = clampf(_cpu_dye_b[idx] + col.b * inf * col.a, 0.0, 1.0)
 
-	var byte_array := PackedByteArray()
-	byte_array.resize(w * h * 4)
 	for y in range(h):
 		for x in range(w):
 			var idx := y * w + x
@@ -402,12 +466,12 @@ func _step_cpu_fallback(_delta: float) -> void:
 			_cpu_vel_y[idx] *= dissipation
 
 			var b_idx := idx * 4
-			byte_array[b_idx + 0] = int(clampf(_cpu_dye_r[idx] * 255.0, 0.0, 255.0))
-			byte_array[b_idx + 1] = int(clampf(_cpu_dye_g[idx] * 255.0, 0.0, 255.0))
-			byte_array[b_idx + 2] = int(clampf(_cpu_dye_b[idx] * 255.0, 0.0, 255.0))
-			byte_array[b_idx + 3] = int(clampf(maxf(_cpu_dye_r[idx], maxf(_cpu_dye_g[idx], _cpu_dye_b[idx])) * 255.0, 0.0, 255.0))
+			_cpu_byte_buffer[b_idx + 0] = int(clampf(_cpu_dye_r[idx] * 255.0, 0.0, 255.0))
+			_cpu_byte_buffer[b_idx + 1] = int(clampf(_cpu_dye_g[idx] * 255.0, 0.0, 255.0))
+			_cpu_byte_buffer[b_idx + 2] = int(clampf(_cpu_dye_b[idx] * 255.0, 0.0, 255.0))
+			_cpu_byte_buffer[b_idx + 3] = int(clampf(maxf(_cpu_dye_r[idx], maxf(_cpu_dye_g[idx], _cpu_dye_b[idx])) * 255.0, 0.0, 255.0))
 
-	_cpu_image.set_data(w, h, false, Image.FORMAT_RGBA8, byte_array)
+	_cpu_image.set_data(w, h, false, Image.FORMAT_RGBA8, _cpu_byte_buffer)
 	_cpu_texture.update(_cpu_image)
 
 func get_display_texture() -> Texture2D:
