@@ -207,6 +207,9 @@ func apply_size_mod(mult: float, duration: float) -> void:
 		emote(7, 1.0, "eep") # SCARE
 	call_deferred("_apply_size_visual")
 
+func apply_size_mult(mult: float, duration: float) -> void:
+	apply_size_mod(mult, duration)
+
 func apply_magnet(duration: float) -> void:
 	magnet_time = maxf(magnet_time, duration)
 
@@ -236,6 +239,12 @@ func clear_mods() -> void:
 	shape_type = Shape.STANDARD
 	stun_time = 0.0
 	call_deferred("_apply_size_visual")
+
+func _get_half_height() -> float:
+	var base_h := 70.0
+	if shape_type == Shape.FORTRESS:
+		base_h = 80.0
+	return base_h * size_mod
 
 func _apply_size_visual() -> void:
 	var s := size_mod
@@ -284,7 +293,7 @@ func _spawn_stun_bolt(origin: Vector2, fwd: Vector2, stun_len: float) -> void:
 		p.apply_stun(stun_len)
 	)
 
-func _physics_process(delta: float) -> void:
+func _update_timers(delta: float) -> void:
 	if blast_cooldown > 0.0:
 		blast_cooldown -= delta
 	if parry_window > 0.0:
@@ -306,15 +315,22 @@ func _physics_process(delta: float) -> void:
 			call_deferred("_apply_size_visual")
 	if stun_time > 0.0:
 		stun_time -= delta
-		velocity = Vector2.ZERO
-		is_shooting = false
-		is_sucking = false
+
+func _physics_process(delta: float) -> void:
+	if stun_time > 0.0:
+		velocity = velocity.move_toward(Vector2.ZERO, 3800.0 * delta)
+		move_and_slide()
+		_update_timers(delta)
+		_apply_hydro(delta)
 		_update_visuals(delta)
+		_update_face()
 		if _stun_fx:
 			_stun_fx.visible = true
 		return
 	if _stun_fx:
 		_stun_fx.visible = false
+
+	_update_timers(delta)
 
 	if not is_ai:
 		_handle_player_input(delta)
@@ -322,8 +338,9 @@ func _physics_process(delta: float) -> void:
 		is_shooting = false
 		is_sucking = false
 
-	var cur_min_y := 40.0 + 70.0 * size_mod + 4.0
-	var cur_max_y := 1040.0 - 70.0 * size_mod - 4.0
+	var hh := _get_half_height()
+	var cur_min_y := 40.0 + hh + 4.0
+	var cur_max_y := 1040.0 - hh - 4.0
 	global_position.x = clampf(global_position.x, min_x, max_x)
 	global_position.y = clampf(global_position.y, cur_min_y, cur_max_y)
 
@@ -358,19 +375,20 @@ func _handle_player_input(delta: float) -> void:
 	var accel := 7800.0
 	var friction := 6200.0
 
-	# Mouse is the Plasma Pong feel for P1. Use play-space coords so camera shake
-	# does not look like the cursor moved.
+	# Mouse follow for P1: 1-to-1 tracking in world space
 	if player_id == 0:
 		var mouse := _play_mouse()
-		var cur_min_y := 40.0 + 70.0 * size_mod + 4.0
-		var cur_max_y := 1040.0 - 70.0 * size_mod - 4.0
-		var in_zone := mouse.x >= 0.0 and mouse.x <= max_x + 140.0 and mouse.y >= cur_min_y - 60.0 and mouse.y <= cur_max_y + 60.0
-		if in_zone and (mouse - global_position).length() > 6.0:
+		var hh := _get_half_height()
+		var cur_min_y := 40.0 + hh + 4.0
+		var cur_max_y := 1040.0 - hh - 4.0
+		var on_my_side := mouse.x <= 960.0 or input_dir.length() < 0.05
+		if on_my_side:
 			var target := Vector2(clampf(mouse.x, min_x, max_x), clampf(mouse.y, cur_min_y, cur_max_y))
 			var diff := target - global_position
-			var follow_speed := maxf(speed * 1.35, diff.length() * 18.0)
-			velocity = velocity.move_toward(diff.normalized() * minf(diff.length() * 26.0, follow_speed), accel * 1.5 * delta)
+			velocity = diff * 28.0
 			move_and_slide()
+			if (global_position.y <= cur_min_y and velocity.y < 0.0) or (global_position.y >= cur_max_y and velocity.y > 0.0):
+				velocity.y = 0.0
 			return
 
 	if input_dir.length() > 0.05:
@@ -381,11 +399,7 @@ func _handle_player_input(delta: float) -> void:
 	move_and_slide()
 
 func _play_mouse() -> Vector2:
-	var vp := get_viewport()
-	if vp == null:
-		return Vector2(960, 540)
-	var p := vp.get_mouse_position()
-	return Vector2(clampf(p.x, 0.0, 1920.0), clampf(p.y, 0.0, 1080.0))
+	return get_global_mouse_position()
 
 func try_serve() -> bool:
 	if ball == null or not is_instance_valid(ball):

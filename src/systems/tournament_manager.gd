@@ -90,6 +90,8 @@ const STAGES: Array[Dictionary] = [
 	}
 ]
 
+var _stage_advance_token := 0
+
 func setup(p_game: GameManager, p_p1: Paddle, p_p2: Paddle, p_ai: PaddleAI, p_bricks: BrickMatrix, p_fluid: FluidSimulator, p_vfx: VFXManager, p_audio: AudioManager, p_chaos) -> void:
 	game_mgr = p_game
 	paddle_left = p_p1
@@ -102,11 +104,13 @@ func setup(p_game: GameManager, p_p1: Paddle, p_p2: Paddle, p_ai: PaddleAI, p_br
 	chaos_director = p_chaos
 
 func start_tournament() -> void:
+	_stage_advance_token += 1
 	is_tournament_active = true
 	current_stage = 0
 	_apply_stage(current_stage)
 
 func advance_stage() -> void:
+	_stage_advance_token += 1
 	current_stage += 1
 	if current_stage >= STAGES.size():
 		is_tournament_active = false
@@ -115,9 +119,11 @@ func advance_stage() -> void:
 		_apply_stage(current_stage)
 
 func restart_stage() -> void:
+	_stage_advance_token += 1
 	_apply_stage(current_stage)
 
 func stop_tournament() -> void:
+	_stage_advance_token += 1
 	is_tournament_active = false
 	if paddle_right_twin != null and is_instance_valid(paddle_right_twin):
 		paddle_right_twin.queue_free()
@@ -219,11 +225,14 @@ func on_match_won(winner_id: int) -> void:
 			tournament_won.emit()
 			is_tournament_active = false
 		else:
-			# Advance to next stage after short pause
+			# Advance to next stage after short pause with token guard
+			_stage_advance_token += 1
+			var current_token := _stage_advance_token
 			var t := get_tree().create_timer(3.0)
 			t.timeout.connect(func():
-				advance_stage()
-				game_mgr.restart_match()
+				if current_token == _stage_advance_token and is_tournament_active:
+					advance_stage()
+					game_mgr.restart_match()
 			)
 	else:
 		# Player lost stage

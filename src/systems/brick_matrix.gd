@@ -7,13 +7,15 @@ signal brick_shattered(breaker_id: int, pos: Vector2)
 var fluid_sim: FluidSimulator
 var vfx_mgr: VFXManager
 var audio_mgr: AudioManager
+var chaos_director
 
 var _active_bricks: Array[Brick] = []
 
-func setup(p_fluid: FluidSimulator, p_vfx: VFXManager, p_audio: AudioManager) -> void:
+func setup(p_fluid: FluidSimulator, p_vfx: VFXManager, p_audio: AudioManager, p_chaos = null) -> void:
 	fluid_sim = p_fluid
 	vfx_mgr = p_vfx
 	audio_mgr = p_audio
+	chaos_director = p_chaos
 
 func clear_all_bricks() -> void:
 	for b in _active_bricks:
@@ -113,7 +115,7 @@ func spawn_boss_bastion(boss_color: Color) -> void:
 func _spawn_brick(pos: Vector2, size: Vector2, hp: int, col: Color, reward: Powerup.Kind) -> void:
 	var brick = preload("res://src/actors/brick.gd").new()
 	add_child(brick)
-	brick.setup(pos, size, hp, col, reward, fluid_sim, vfx_mgr, audio_mgr)
+	brick.setup(pos, size, hp, col, reward, fluid_sim, vfx_mgr, audio_mgr, chaos_director)
 	brick.destroyed.connect(_on_brick_destroyed)
 	_active_bricks.append(brick)
 

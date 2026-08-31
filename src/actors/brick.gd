@@ -14,6 +14,7 @@ var reward_kind: Powerup.Kind = Powerup.Kind.MULTIBALL
 var fluid_sim: FluidSimulator
 var vfx_mgr: VFXManager
 var audio_mgr: AudioManager
+var chaos_director
 
 var _visual: ColorRect
 var _mat: ShaderMaterial
@@ -23,11 +24,11 @@ var _is_destroyed := false
 func _ready() -> void:
 	z_index = 8
 	add_to_group("cymatics_bricks")
-	collision_layer = 1
+	collision_layer = 8
 	collision_mask = 1
 	_build_components()
 
-func setup(pos: Vector2, size: Vector2, hp: int, col: Color, p_reward: Powerup.Kind, p_fluid: FluidSimulator, p_vfx: VFXManager, p_audio: AudioManager) -> void:
+func setup(pos: Vector2, size: Vector2, hp: int, col: Color, p_reward: Powerup.Kind, p_fluid: FluidSimulator, p_vfx: VFXManager, p_audio: AudioManager, p_chaos = null) -> void:
 	global_position = pos
 	brick_size = size
 	max_hp = hp
@@ -37,11 +38,24 @@ func setup(pos: Vector2, size: Vector2, hp: int, col: Color, p_reward: Powerup.K
 	fluid_sim = p_fluid
 	vfx_mgr = p_vfx
 	audio_mgr = p_audio
+	chaos_director = p_chaos
+	
+	var cs := get_node_or_null("CollisionShape2D") as CollisionShape2D
+	if cs != null and cs.shape is RectangleShape2D:
+		if not cs.shape.resource_local_to_scene:
+			cs.shape = cs.shape.duplicate()
+			cs.shape.resource_local_to_scene = true
+		(cs.shape as RectangleShape2D).size = brick_size
+	if _visual != null:
+		_visual.size = brick_size
+		_visual.position = -brick_size * 0.5
+		_visual.pivot_offset = brick_size * 0.5
 	_update_visual_properties()
 
 func _build_components() -> void:
 	var shape := RectangleShape2D.new()
 	shape.size = brick_size
+	shape.resource_local_to_scene = true
 	var cs := CollisionShape2D.new()
 	cs.shape = shape
 	add_child(cs)
@@ -123,8 +137,10 @@ func _shatter(breaker_id: int) -> void:
 		var p_up = preload("res://src/actors/powerup.gd").new()
 		var parent := get_parent()
 		if parent != null:
-			parent.add_child(p_up)
+			parent.call_deferred("add_child", p_up)
 			p_up.setup(reward_kind, global_position, drift_vel)
+			if chaos_director != null:
+				p_up.collected.connect(chaos_director._on_powerup_collected)
 
 	set_deferred("collision_layer", 0)
 	set_deferred("collision_mask", 0)

@@ -35,12 +35,6 @@ func _ready() -> void:
 	ball.set_paddles(paddle_left, paddle_right)
 	paddle_ai.setup(paddle_right, ball)
 
-	brick_matrix = preload("res://src/systems/brick_matrix.gd").new()
-	brick_matrix.name = "BrickMatrix"
-	add_child(brick_matrix)
-	brick_matrix.setup(fluid_sim, vfx_mgr, audio_mgr)
-
-	game_mgr.setup_references(ball, paddle_left, paddle_right, paddle_ai, vfx_mgr, audio_mgr)
 	chaos = preload("res://src/systems/chaos_director.gd").new()
 	chaos.name = "ChaosDirector"
 	add_child(chaos)
@@ -48,6 +42,13 @@ func _ready() -> void:
 	game_mgr.chaos = chaos
 	paddle_ai.game_mgr = game_mgr
 	paddle_ai.chaos = chaos
+
+	brick_matrix = preload("res://src/systems/brick_matrix.gd").new()
+	brick_matrix.name = "BrickMatrix"
+	add_child(brick_matrix)
+	brick_matrix.setup(fluid_sim, vfx_mgr, audio_mgr, chaos)
+
+	game_mgr.setup_references(ball, paddle_left, paddle_right, paddle_ai, vfx_mgr, audio_mgr)
 
 	tournament_mgr = preload("res://src/systems/tournament_manager.gd").new()
 	tournament_mgr.name = "TournamentManager"

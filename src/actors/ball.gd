@@ -418,7 +418,8 @@ func _integrate_flight(delta: float) -> void:
 			_handle_paddle_collision(collider, collision.get_normal())
 		elif collider.has_method("on_ball_hit"):
 			# Brick matrix interaction
-			collider.on_ball_hit(self, collision.get_normal())
+			if velocity.dot(collision.get_normal()) < 0.0:
+				collider.on_ball_hit(self, collision.get_normal())
 		else:
 			var normal := collision.get_normal()
 			if shape_type == Shape.TRIANGLE:
