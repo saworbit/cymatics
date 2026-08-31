@@ -103,10 +103,17 @@ func _spawn_powerup() -> void:
 		PowerupScript.Kind.HYPER,
 	]
 	var kind: int = kinds[randi() % kinds.size()]
-	host.add_child(p)
-	p.setup(kind, Vector2(randf_range(720.0, 1200.0), randf_range(220.0, 860.0)))
+	var pos := Vector2(randf_range(720.0, 1200.0), randf_range(220.0, 860.0))
 	p.collected.connect(_on_powerup_collected)
 	live_powerup = p
+	_attach_powerup.call_deferred(p, kind, pos)
+
+func _attach_powerup(p, kind: int, pos: Vector2) -> void:
+	if host == null or not is_instance_valid(p):
+		return
+	host.add_child(p)
+	p.setup(kind, pos)
+	var PowerupScript = preload("res://src/actors/powerup.gd")
 	if vfx_mgr != null:
 		vfx_mgr.spawn_hit_burst(p.global_position, PowerupScript.COLORS[kind], 1.4)
 
@@ -232,6 +239,7 @@ func threat_ball_for(p: Paddle) -> Ball:
 
 func clear_point() -> void:
 	if live_powerup != null and is_instance_valid(live_powerup):
+		live_powerup.set_deferred("monitoring", false)
 		live_powerup.queue_free()
 	live_powerup = null
 	for b in extra_balls:

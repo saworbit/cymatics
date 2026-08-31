@@ -212,7 +212,7 @@ func hold_for_serve(p: Paddle) -> void:
 	_squash = Vector2.ONE
 	fireball_time = 0.0
 	if collision_shape:
-		collision_shape.disabled = true
+		collision_shape.set_deferred("disabled", true)
 	_update_visuals()
 
 func launch_serve(dir: Vector2, spd: float = -1.0) -> void:
@@ -221,7 +221,7 @@ func launch_serve(dir: Vector2, spd: float = -1.0) -> void:
 	is_serving = false
 	serve_paddle = null
 	if collision_shape:
-		collision_shape.disabled = false
+		collision_shape.set_deferred("disabled", false)
 	var launch_speed := base_speed if spd < 0.0 else spd
 	velocity = dir.normalized() * launch_speed
 	served.emit(dir)
@@ -251,7 +251,7 @@ func reset_ball(start_pos: Vector2, dir: Vector2) -> void:
 	_squash = Vector2.ONE
 	fireball_time = 0.0
 	if collision_shape:
-		collision_shape.disabled = false
+		collision_shape.set_deferred("disabled", false)
 	_update_visuals()
 
 func _physics_process(delta: float) -> void:

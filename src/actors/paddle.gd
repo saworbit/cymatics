@@ -201,7 +201,7 @@ func apply_size_mod(mult: float, duration: float) -> void:
 		emote(2, 1.0, "BIG")
 	elif mult < 0.85:
 		emote(7, 1.0, "eep") # SCARE
-	_apply_size_visual()
+	call_deferred("_apply_size_visual")
 
 func apply_magnet(duration: float) -> void:
 	magnet_time = maxf(magnet_time, duration)
@@ -212,7 +212,7 @@ func clear_mods() -> void:
 	size_mod_time = 0.0
 	size_mod = 1.0
 	stun_time = 0.0
-	_apply_size_visual()
+	call_deferred("_apply_size_visual")
 
 func _apply_size_visual() -> void:
 	var s := size_mod
@@ -230,15 +230,9 @@ func fire_stun_bolt() -> void:
 		return
 	stun_cooldown = 0.55 if armed_time > 0.0 else 1.7
 	var fwd := Vector2.RIGHT if player_id == 0 else Vector2.LEFT
-	var bolt = preload("res://src/actors/stun_bolt.gd").new()
-	var parent := get_parent()
-	if parent == null:
-		return
-	parent.add_child(bolt)
-	bolt.setup(global_position + fwd * 70.0, fwd, player_id, team_color)
-	bolt.hit_paddle.connect(func(p: Paddle):
-		p.apply_stun(1.35 if armed_time <= 0.0 else 1.9)
-	)
+	var origin := global_position + fwd * 70.0
+	var stun_len := 1.9 if armed_time > 0.0 else 1.35
+	call_deferred("_spawn_stun_bolt", origin, fwd, stun_len)
 	if vfx_mgr != null:
 		vfx_mgr.spawn_hit_burst(global_position + fwd * 40.0, team_color, 1.4)
 		vfx_mgr.apply_camera_kick(fwd, 0.55)
@@ -247,6 +241,17 @@ func fire_stun_bolt() -> void:
 	stun_fired.emit(global_position)
 	if armed_time > 0.0:
 		armed_time = 0.0
+
+func _spawn_stun_bolt(origin: Vector2, fwd: Vector2, stun_len: float) -> void:
+	var parent := get_parent()
+	if parent == null:
+		return
+	var bolt = preload("res://src/actors/stun_bolt.gd").new()
+	parent.add_child(bolt)
+	bolt.setup(origin, fwd, player_id, team_color)
+	bolt.hit_paddle.connect(func(p: Paddle):
+		p.apply_stun(stun_len)
+	)
 
 func _physics_process(delta: float) -> void:
 	if blast_cooldown > 0.0:
@@ -263,7 +268,7 @@ func _physics_process(delta: float) -> void:
 		size_mod_time -= delta
 		if size_mod_time <= 0.0:
 			size_mod = 1.0
-			_apply_size_visual()
+			call_deferred("_apply_size_visual")
 	if stun_time > 0.0:
 		stun_time -= delta
 		velocity = Vector2.ZERO
