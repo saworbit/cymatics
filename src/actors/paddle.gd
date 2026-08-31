@@ -225,6 +225,7 @@ func mutate_shape(new_shape: Shape, duration: float) -> void:
 	if audio_mgr != null:
 		audio_mgr.trigger_sting(520.0, 0.4)
 	emote(2, 1.2, label)
+	call_deferred("_apply_size_visual")
 
 func clear_mods() -> void:
 	armed_time = 0.0
@@ -245,7 +246,15 @@ func _apply_size_visual() -> void:
 		if not shape_node.shape.resource_local_to_scene:
 			shape_node.shape = shape_node.shape.duplicate()
 			shape_node.shape.resource_local_to_scene = true
-		(shape_node.shape as RectangleShape2D).size = Vector2(36 * s, 140 * s)
+		var base_w := 36.0
+		var base_h := 140.0
+		if shape_type == Shape.FORTRESS:
+			base_w = 52.0
+			base_h = 160.0
+		elif shape_type == Shape.WEDGE:
+			base_w = 44.0
+			base_h = 140.0
+		(shape_node.shape as RectangleShape2D).size = Vector2(base_w * s, base_h * s)
 
 func fire_stun_bolt() -> void:
 	if stun_cooldown > 0.0 or stun_time > 0.0:

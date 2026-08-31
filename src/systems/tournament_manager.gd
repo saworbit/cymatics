@@ -122,6 +122,8 @@ func stop_tournament() -> void:
 	if paddle_right_twin != null and is_instance_valid(paddle_right_twin):
 		paddle_right_twin.queue_free()
 		paddle_right_twin = null
+	if paddle_ai != null:
+		paddle_ai.twin_paddle = null
 	if brick_matrix != null:
 		brick_matrix.clear_all_bricks()
 	if paddle_right != null:
@@ -138,10 +140,13 @@ func _apply_stage(stage_idx: int) -> void:
 	if paddle_right_twin != null and is_instance_valid(paddle_right_twin):
 		paddle_right_twin.queue_free()
 		paddle_right_twin = null
+	if paddle_ai != null:
+		paddle_ai.twin_paddle = null
 	if brick_matrix != null:
 		brick_matrix.clear_all_bricks()
 
 	# Configure Boss Paddle
+	paddle_right.clear_mods()
 	paddle_right.team_color = info["color"]
 	paddle_right.mutate_shape(info["shape"], 9999.0)
 	paddle_right.speed = 950.0 + float(stage_idx) * 60.0
@@ -180,6 +185,30 @@ func _spawn_twin_paddle(col: Color) -> void:
 	paddle_right.position = Vector2(1740, 800)
 	paddle_ai.twin_paddle = paddle_right_twin
 
+func _process(delta: float) -> void:
+	if not is_tournament_active or game_mgr == null or game_mgr.current_state != GameManager.State.PLAYING:
+		return
+
+	# Stage 4: Vortex Gravitational Singularity Pulse
+	if current_stage == 3 and fluid_sim != null:
+		if fmod(Time.get_ticks_msec() * 0.001, 4.5) < delta:
+			var pull_center := Vector2(1200.0, randf_range(300.0, 780.0))
+			fluid_sim.inject_vortex(pull_center, 6.5 * (1.0 if randf() > 0.5 else -1.0), 160.0, Color(0.7, 0.2, 1.0))
+			if game_mgr.ball != null and not game_mgr.ball.is_scored:
+				game_mgr.ball.mutate_shape(Ball.Shape.STAR, 4.0)
+
+	# Stage 5: Cymatica Shapeshifting Storm
+	elif current_stage == 4 and paddle_right != null and is_instance_valid(paddle_right):
+		if fmod(Time.get_ticks_msec() * 0.001, 7.0) < delta:
+			var shapes := [Paddle.Shape.SCOOP, Paddle.Shape.WEDGE, Paddle.Shape.FORK, Paddle.Shape.FORTRESS]
+			var next_s: Paddle.Shape = shapes[randi() % shapes.size()]
+			paddle_right.mutate_shape(next_s, 6.0)
+			if vfx_mgr != null:
+				vfx_mgr.flash_screen(Color(1.0, 0.95, 0.4), 0.2, 0.15)
+			if game_mgr.ball != null and not game_mgr.ball.is_scored:
+				var bshapes := [Ball.Shape.TRIANGLE, Ball.Shape.CUBE, Ball.Shape.STAR, Ball.Shape.RUGBY]
+				game_mgr.ball.mutate_shape(bshapes[randi() % bshapes.size()], 6.0)
+
 func on_match_won(winner_id: int) -> void:
 	if not is_tournament_active:
 		return
@@ -194,7 +223,7 @@ func on_match_won(winner_id: int) -> void:
 			var t := get_tree().create_timer(3.0)
 			t.timeout.connect(func():
 				advance_stage()
-				game_mgr.reset_match()
+				game_mgr.restart_match()
 			)
 	else:
 		# Player lost stage

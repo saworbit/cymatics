@@ -179,18 +179,30 @@ func _on_powerup_collected(kind: int, hitter_id: int, ball: Ball) -> void:
 			var tb: Ball = ball if ball != null else primary
 			if tb:
 				tb.mutate_shape(Ball.Shape.TRIANGLE, 9.0)
+			for extra in extra_balls:
+				if is_instance_valid(extra):
+					extra.mutate_shape(Ball.Shape.TRIANGLE, 9.0)
 		PowerupScript.Kind.BALL_CUBE:
 			var tb: Ball = ball if ball != null else primary
 			if tb:
 				tb.mutate_shape(Ball.Shape.CUBE, 9.0)
+			for extra in extra_balls:
+				if is_instance_valid(extra):
+					extra.mutate_shape(Ball.Shape.CUBE, 9.0)
 		PowerupScript.Kind.BALL_STAR:
 			var tb: Ball = ball if ball != null else primary
 			if tb:
 				tb.mutate_shape(Ball.Shape.STAR, 9.0)
+			for extra in extra_balls:
+				if is_instance_valid(extra):
+					extra.mutate_shape(Ball.Shape.STAR, 9.0)
 		PowerupScript.Kind.BALL_RUGBY:
 			var tb: Ball = ball if ball != null else primary
 			if tb:
 				tb.mutate_shape(Ball.Shape.RUGBY, 9.0)
+			for extra in extra_balls:
+				if is_instance_valid(extra):
+					extra.mutate_shape(Ball.Shape.RUGBY, 9.0)
 		PowerupScript.Kind.PADDLE_SCOOP:
 			if self_p:
 				self_p.mutate_shape(Paddle.Shape.SCOOP, 9.0)
@@ -221,6 +233,8 @@ func _split_multiball(source: Ball) -> void:
 		clone.velocity = spread.normalized() * maxf(source.velocity.length() * 0.92, clone.min_speed)
 		clone.rally_hits = source.rally_hits
 		clone.last_hitter_id = source.last_hitter_id
+		if source.shape_type != Ball.Shape.ROUND:
+			clone.mutate_shape(source.shape_type, maxf(source.shape_time, 4.0))
 		clone.add_to_group("cymatics_balls")
 		clone.goal_reached.connect(_on_clone_goal)
 		clone.hit_paddle.connect(func(p: Paddle, spd: float, perf: bool):
@@ -279,6 +293,8 @@ func clear_point() -> void:
 		live_powerup.set_deferred("monitoring", false)
 		live_powerup.queue_free()
 	live_powerup = null
+	if host != null and host.get_tree() != null:
+		host.get_tree().call_group("cymatics_powerups", "queue_free")
 	for b in extra_balls:
 		if is_instance_valid(b):
 			b.queue_free()
