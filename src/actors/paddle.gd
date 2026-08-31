@@ -119,10 +119,10 @@ func _setup_visuals() -> void:
 
 	face = preload("res://src/actors/character_face.gd").new()
 	add_child(face)
-	# Padd: wide eager eyes. Lin: smug half-lids, faces the court.
+	# Padd (P1, left): wide eager eyes facing right (+X). Lin (P2, right): smug half-lids facing left (-X).
 	var lid := 0.05 if player_id == 0 else 0.42
 	face.setup(Vector2(92, 128), player_id == 1, lid)
-	face.position = Vector2(6, -8)
+	face.position = Vector2(6.0 if player_id == 0 else -6.0, -8.0)
 
 func setup_dependencies(p_fluid_sim: FluidSimulator, p_vfx: VFXManager, p_audio: AudioManager) -> void:
 	fluid_sim = p_fluid_sim
@@ -523,8 +523,8 @@ func _update_visuals(delta: float) -> void:
 	if visual_core != null:
 		visual_core.scale = visual_core.scale.lerp(Vector2(size_mod, size_mod), clampf(delta * 12.0, 0.0, 1.0))
 	if face != null:
-		var sx := -size_mod if player_id == 1 else size_mod
-		face.scale = Vector2(sx, size_mod)
+		face.scale = Vector2(size_mod, size_mod)
+		face.position = Vector2((6.0 if player_id == 0 else -6.0) * size_mod, -8.0 * size_mod)
 	if _cannon != null:
 		_cannon.visible = armed_time > 0.0
 		if armed_time > 0.0:

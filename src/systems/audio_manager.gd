@@ -54,7 +54,8 @@ func _exit_tree() -> void:
 	if player != null:
 		player.stop()
 		player.stream = null
-		player.queue_free()
+		remove_child(player)
+		player.free()
 		player = null
 
 func _init_synthesizer() -> void:
