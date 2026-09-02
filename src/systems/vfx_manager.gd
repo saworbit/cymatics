@@ -514,7 +514,9 @@ func _goal_sequence(ball: Node, side: int, color: Color) -> void:
 	request_goal_focus(line_pos, 0.5)
 	add_trauma(0.55 * maxf(_motion_scale(), 0.35), 0.8)
 	flash_screen(color, 0.24, 0.2)
-	var timer := tree.create_timer(GOAL_SLOWMO_TIME, false, false, true)
+	# process_always so a pause taken during goal theatre cannot hold the
+	# slow-motion release hostage until after the player resumes.
+	var timer := tree.create_timer(GOAL_SLOWMO_TIME, true, false, true)
 	await timer.timeout
 	if time_ctrl != null:
 		time_ctrl.pop(&"goal")

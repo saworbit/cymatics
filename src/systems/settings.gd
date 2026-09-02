@@ -25,6 +25,10 @@ signal changed(key: String, value: Variant)
 const PATH := "user://settings.cfg"
 const SECTION := "settings"
 
+## Where this instance reads and writes. Overridable so tests can run against a
+## scratch file instead of the player's real settings.
+var config_path := PATH
+
 const DEFAULTS := {
 	"master_volume": 0.85,
 	"music_volume": 0.8,
@@ -42,6 +46,23 @@ const DEFAULTS := {
 	"screen_shake": 1.0,
 	"haptics": true,
 	"haptics_strength": 0.8,
+}
+
+## Inclusive valid range per key. Anything read from user://settings.cfg is
+## untrusted: the file is plain text, can be hand-edited, and can be truncated
+## by a crash mid-save. Values outside these bounds are clamped rather than
+## rejected so the game always boots with something usable.
+const RANGES := {
+	"master_volume": [0.0, 1.0],
+	"music_volume": [0.0, 1.0],
+	"sfx_volume": [0.0, 1.0],
+	"bloom": [0.0, 3.0],
+	"chromatic": [0.0, 5.0],
+	"fluid_quality": [0, 3],
+	"colorblind_mode": [0, 3],
+	"ui_scale": [0.5, 2.0],
+	"screen_shake": [0.0, 1.0],
+	"haptics_strength": [0.0, 1.0],
 }
 
 ## Accessibility palettes. Index matches `colorblind_mode`.
@@ -96,6 +117,7 @@ func get_value(key: String, default: Variant = null) -> Variant:
 	return default
 
 func set_value(key: String, value: Variant, persist := true) -> void:
+	value = coerce(key, value)
 	if _values.has(key) and _values[key] == value:
 		return
 	_values[key] = value
@@ -176,29 +198,63 @@ func has_bus(bus_name: String) -> bool:
 func load_settings() -> void:
 	_values = DEFAULTS.duplicate()
 	var cfg := ConfigFile.new()
-	var err := cfg.load(PATH)
+	var err := cfg.load(config_path)
 	if err != OK:
 		return
 	for key in DEFAULTS.keys():
 		if cfg.has_section_key(SECTION, key):
-			var v: Variant = cfg.get_value(SECTION, key, DEFAULTS[key])
-			# Keep the stored type consistent with the default's type.
-			match typeof(DEFAULTS[key]):
-				TYPE_FLOAT:
-					v = clampf(float(v), 0.0, 10.0)
-				TYPE_INT:
-					v = int(v)
+			_values[key] = coerce(key, cfg.get_value(SECTION, key, DEFAULTS[key]))
+
+## Force `value` into the type and range the key promises, falling back to the
+## default when it cannot be salvaged. NaN and infinity must never escape here:
+## a non-finite volume reaches AudioServer as a NaN decibel, and a non-finite
+## ui_scale divides the UI canvas by zero.
+func coerce(key: String, value: Variant) -> Variant:
+	if not DEFAULTS.has(key):
+		return value
+	var fallback: Variant = DEFAULTS[key]
+	match typeof(fallback):
+		TYPE_FLOAT:
+			if not (typeof(value) == TYPE_FLOAT or typeof(value) == TYPE_INT):
+				return fallback
+			var f := float(value)
+			if not is_finite(f):
+				return fallback
+			if RANGES.has(key):
+				return clampf(f, float(RANGES[key][0]), float(RANGES[key][1]))
+			return f
+		TYPE_INT:
+			if typeof(value) == TYPE_BOOL:
+				return 1 if value else 0
+			if not (typeof(value) == TYPE_FLOAT or typeof(value) == TYPE_INT):
+				return fallback
+			if typeof(value) == TYPE_FLOAT and not is_finite(float(value)):
+				return fallback
+			var i := int(value)
+			if RANGES.has(key):
+				return clampi(i, int(RANGES[key][0]), int(RANGES[key][1]))
+			return i
+		TYPE_BOOL:
+			# bool() is not a constructor in GDScript 2; convert explicitly.
+			match typeof(value):
 				TYPE_BOOL:
-					v = bool(v)
-			_values[key] = v
+					return value
+				TYPE_INT, TYPE_FLOAT:
+					return float(value) != 0.0
+				TYPE_STRING, TYPE_STRING_NAME:
+					var t := String(value).strip_edges().to_lower()
+					return t == "true" or t == "1" or t == "yes" or t == "on"
+				_:
+					return fallback
+	return value
 
 func save() -> void:
 	var cfg := ConfigFile.new()
 	for key in _values.keys():
 		cfg.set_value(SECTION, key, _values[key])
-	var err := cfg.save(PATH)
+	var err := cfg.save(config_path)
 	if err != OK:
-		push_warning("[Settings] Could not save %s (error %d)" % [PATH, err])
+		push_warning("[Settings] Could not save %s (error %d)" % [config_path, err])
 	_dirty = false
 
 func apply_all() -> void:

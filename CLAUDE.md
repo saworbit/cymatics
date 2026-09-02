@@ -7,12 +7,26 @@ third player. GDScript only, no addons, no autoloads except `Settings`.
 
 - Editor binary on this machine: `C:/Godot/godot.cmd` (CI uses 4.7.2 Linux).
 - Parse every script: `bash tools/check_scripts.sh C:/Godot/godot.cmd`
+- Tests: `bash tools/run_tests.sh C:/Godot/godot.cmd` (unit + integration).
+  Unit tests are `tests/test_*.gd` extending `TestCase`; add a file there and
+  the runner finds it. `tests/integration_run.gd` boots the real scene and
+  asserts invariants (finite positions, sane time scale, no node leak) while
+  driving pause, restart, mode switches and fluid-quality changes.
+  Godot exits 0 on a GDScript runtime error, so the wrapper also greps the log
+  for `SCRIPT ERROR`; run tests through the wrapper, not the runner directly.
 - Headless smoke: `godot --headless --path . --quit-after 300`
 - AI vs AI lab: `tools/run_lab.ps1` or `tools/run_lab.sh`, then `python tools/lab_analyze.py`
 - Visual check without a human: `godot --path . --resolution 1920x1080 --script res://tools/screenshot_run.gd -- --out=<dir>`
   boots the menu, starts an arcade match, flips to AI vs AI, pauses, and saves PNGs. Read them.
 - Headless runs have no RenderingDevice, so the fluid falls back to CPU and
   logs a warning. That is expected.
+- A fresh clone or worktree needs one import before anything resolves
+  `class_name` types (`godot --headless --path . --import`); without it you get
+  a wall of "Could not find type" parse errors. `tools/run_tests.sh` does this
+  for you.
+- `tools/redteam_*` are adversarial probes kept from a red-team pass: malformed
+  settings, hostile tuning values, NaN injection, fluid-quality churn, results
+  screen input. Use them when touching those areas.
 
 ## Architecture (what is actually true)
 
@@ -44,6 +58,9 @@ third player. GDScript only, no addons, no autoloads except `Settings`.
   popups go through `HUD.show_callout(text, color, priority)`; do not add
   ad-hoc labels. Frosted glass must sit on a ColorRect behind a panel.
 - Settings persist via the `Settings` autoload (`user://settings.cfg`).
+  Everything read from that file is untrusted: `Settings.coerce()` forces type
+  and range per key and rejects NaN/infinity. Add new keys to `DEFAULTS` and,
+  if bounded, to `RANGES`. Point `config_path` elsewhere in tests.
 - Fluid compute: advect runs in its own compute list. Godot 4.7 rejects its
   push constant when it shares a list with other push-constant pipelines.
 - `tools/screenshot_run.gd` plans: default (AI rally + pause), `--plan=human`

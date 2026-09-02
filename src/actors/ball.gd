@@ -104,9 +104,42 @@ func _ready() -> void:
 
 ## Loads the default tuning when no resource was assigned, then copies the
 ## values other systems touch directly onto the node.
+## A tuning resource is data, and data can be hand-edited or badly merged. A
+## non-finite value here does not stay local: minf()/maxf() return their NaN
+## argument, so one bad number becomes a NaN speed, then a NaN velocity, then a
+## NaN position the ball can never recover from. Fall back per-property.
+func _validate_tuning() -> void:
+	if tuning == null:
+		return
+	var defaults: BallTuning = load(DEFAULT_TUNING) as BallTuning
+	if defaults == null:
+		return
+	for prop in tuning.get_property_list():
+		if not (prop["usage"] & PROPERTY_USAGE_SCRIPT_VARIABLE):
+			continue
+		var name: String = prop["name"]
+		var v: Variant = tuning.get(name)
+		var bad := false
+		match typeof(v):
+			TYPE_FLOAT:
+				bad = not is_finite(float(v))
+			TYPE_VECTOR2:
+				var vec: Vector2 = v
+				bad = not (is_finite(vec.x) and is_finite(vec.y))
+		if bad:
+			push_warning("[Ball] tuning.%s is not finite; using the default" % name)
+			tuning.set(name, defaults.get(name))
+
 func _ensure_tuning() -> void:
 	if tuning == null:
 		tuning = load(DEFAULT_TUNING) as BallTuning
+	_validate_tuning()
+	_sync_tuning_fields()
+
+## Mirror the tuning values other systems read directly off the ball.
+func _sync_tuning_fields() -> void:
+	if tuning == null:
+		return
 	radius = tuning.radius
 	base_speed = tuning.base_speed
 	max_speed = tuning.max_speed
@@ -418,7 +451,29 @@ func _process_serve(delta: float) -> void:
 	else:
 		global_position = Vector2(960, 540 + sin(_serve_bob) * t.serve_bob_amplitude_loose)
 
+## Last line of defence. Nothing should produce a non-finite ball, but if
+## something does the ball becomes invisible, uncollidable and unrecoverable:
+## normalized() on a NaN vector yields zero, so it never heals itself and the
+## point can never end. Snap back to a serve instead of soft-locking the match.
+func _recover_if_non_finite() -> bool:
+	var pos := global_position
+	if is_finite(pos.x) and is_finite(pos.y) and is_finite(velocity.x) and is_finite(velocity.y) and is_finite(spin):
+		return false
+	push_warning("[Ball] non-finite state (pos=%s vel=%s spin=%s); recovering" % [pos, velocity, spin])
+	# Scrub the tuning as well. The usual source of a non-finite ball is a
+	# non-finite constant feeding minf()/maxf(), which return their NaN
+	# argument; without this the ball would go bad again on the next frame.
+	_validate_tuning()
+	_sync_tuning_fields()
+	global_position = Vector2(960.0, 540.0)
+	var dir := -1.0 if randf() < 0.5 else 1.0
+	velocity = Vector2(dir * maxf(base_speed, 1.0), 0.0)
+	spin = 0.0
+	return true
+
 func _integrate_flight(delta: float) -> void:
+	if _recover_if_non_finite():
+		return
 	if captured_by != null:
 		if is_instance_valid(captured_by) and captured_by.captured_ball() == self:
 			_integrate_captured(delta)
@@ -497,6 +552,12 @@ func _integrate_flight(delta: float) -> void:
 	if is_in_cymatic_lock:
 		floor_speed += t.floor_lock_bonus
 	speed = clampf(speed, floor_speed, _speed_cap())
+	# A non-finite speed or direction here poisons the position on the very
+	# next move_and_collide, and normalized() cannot recover it: it returns
+	# zero for a NaN vector. Catch it at the source instead.
+	if not is_finite(speed) or not (is_finite(velocity.x) and is_finite(velocity.y)):
+		_recover_if_non_finite()
+		return
 	velocity = velocity.normalized() * speed
 
 	# Stretch along velocity
@@ -929,6 +990,9 @@ func apply_impulse(dir: Vector2, amount: float) -> void:
 		return
 	velocity += dir.normalized() * amount
 	var spd := clampf(velocity.length(), min_speed, _speed_cap())
+	if not is_finite(spd) or not (is_finite(velocity.x) and is_finite(velocity.y)):
+		_recover_if_non_finite()
+		return
 	velocity = velocity.normalized() * spd
 
 func _clear_trail() -> void:

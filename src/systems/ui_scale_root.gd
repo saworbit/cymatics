@@ -49,6 +49,11 @@ func _ready() -> void:
 
 ## 0.8 / 1.0 / 1.25 / 1.5 from the `ui_scale` setting.
 func set_ui_scale(value: float) -> void:
+	# clampf() passes NaN straight through, and a NaN scale propagates into
+	# Control.size, which the engine rejects and which blanks the whole HUD.
+	if not is_finite(value) or value <= 0.0:
+		push_warning("[UIScaleRoot] ignoring a non-finite ui_scale (%s)" % value)
+		value = 1.0
 	_scale = clampf(value, MIN_SCALE, MAX_SCALE)
 	_refresh()
 

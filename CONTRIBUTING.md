@@ -17,6 +17,7 @@ Thanks for paddlin' with us.
 | `shaders/` | Canvas and compute shaders |
 | `assets/` | Icons and baked art |
 | `docs/design/` | Specs (codename CYMATICS) |
+| `tests/` | Unit tests and the integration harness |
 
 Keep `res://` paths matching that tree.
 
@@ -24,8 +25,10 @@ Keep `res://` paths matching that tree.
 
 1. Branch from `main`.
 2. One idea per PR.
-3. CI must import the project headless.
-4. If you change gameplay feel, note it in the PR body.
+3. CI must import the project headless, parse every script, and pass the tests.
+4. Run `bash tools/run_tests.sh <godot>` before opening the PR.
+5. Fixing a bug? Add a test that fails without your fix.
+6. If you change gameplay feel, note it in the PR body.
 
 Use the [pull request template](.github/PULL_REQUEST_TEMPLATE.md).
 

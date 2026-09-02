@@ -229,7 +229,14 @@ func _input(event: InputEvent) -> void:
 	var is_pause := event.is_action_pressed("pause") \
 		or (event.is_action_pressed("ui_cancel") and not event.is_action("pause"))
 	if is_pause:
-		if current_state != State.MENU:
+		# Only claim Escape when it will actually do something. On the results
+		# screen toggle_pause() is a no-op, so Escape used to be a dead key
+		# with no way back except the mouse; there it backs out to the menu.
+		if current_state == State.MATCH_OVER:
+			return_to_menu()
+			get_viewport().set_input_as_handled()
+			return
+		if current_state != State.MENU and (is_live() or current_state == State.PAUSED):
 			toggle_pause()
 			get_viewport().set_input_as_handled()
 			return

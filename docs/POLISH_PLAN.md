@@ -118,6 +118,61 @@ Known follow-ups from this pass: `p1_super`/`p2_super` both bind physical Shift 
 - Music stems (intro + seamless loop, intensity layer, heartbeat at lock).
 - Display font (needs an OFL font download; ask before fetching).
 
+## Phase 4: hardening (landed 2026-09-03, branch `polish/phase-4-hardening`)
+
+The project had no tests. It now has a headless suite (`tools/run_tests.sh`):
+59 unit tests / 790 assertions plus an integration harness that boots the real
+scene and checks invariants while hammering pause, restart, mode switches and
+fluid-quality changes.
+
+Two flaws in the harness itself were found and fixed while building it, both of
+which would have let broken tests pass CI: a test file that fails to parse
+loads as a script with no methods (now a failure), and a GDScript runtime error
+aborts a test method indistinguishably from a clean return (a test that records
+no assertions is now a failure). Tests also run on the first processed frame,
+not in `_initialize`, because nodes added during `_initialize` never receive
+`_ready`.
+
+### Red team findings and their fixes
+
+An adversarial pass in an isolated worktree attacked persisted state, tuning
+resources, the state machine, input, lifetimes and numeric edges. Findings, all
+fixed and verified with the attacker's own repro scripts (`tools/redteam_*`):
+
+- **Fluid detail on the CPU fallback** left the scratch arrays sized for the old
+  grid and threw ~60 out-of-bounds errors a second forever, freezing the field
+  for anyone without a compute device. Now re-inits and emits `grid_changed`.
+- **`ui_scale = nan`** blanked the entire HUD, and stuck across boots, because
+  `clampf()` passes NaN through. Rejected at load and guarded in `UIScaleRoot`.
+- **One badly-typed key** in settings.cfg aborted the load loop, silently
+  reverting that key and every key after it on every boot. `Settings.coerce()`
+  now type-checks per key, clamps to `RANGES`, and rejects NaN and infinity.
+- **A NaN ball position was permanent**: `normalized()` returns zero for a NaN
+  vector, so the ball went invisible and uncollidable and the point could never
+  end. `Ball` now recovers, and scrubs the tuning that caused it.
+- **Non-finite tuning values** propagated through `minf()`/`maxf()`, which
+  return their NaN argument. Tuning is validated per property at load.
+- **A windowed lab run never terminated**, rewriting `summary.json` ~60 times a
+  second indefinitely. `_finish` is latched and stops recording.
+- **Escape was a dead key on the results screen**; it now backs out to the menu.
+- **Pausing during goal theatre** held the slow-motion release hostage; its
+  timer is now `process_always`.
+
+Verified unchanged after the fixes: 1311 normalize warnings became 1, NaN ball
+events 0, lab summary writes 9,766 became 1, HUD geometry finite again.
+
+Not fixed, and honestly reported: injecting NaN into a *live* tuning resource
+after load still leaves the process not fully exiting at teardown (Godot logs
+"A Thread object is being destroyed without its completion having been
+realized"). The game itself completes its run correctly; this is a shutdown
+artifact under a synthetic mutation, not a player-reachable path.
+
+Red team also confirmed what held up under load: the state machine survived
+three 180-200 s soak runs drawing from 23 hostile actions with zero soft-locks,
+mode hammering, capture/slingshot lifetime, 12 of 13 numeric edge cases, no
+object or RID leaks over 240 s runs, no VRAM growth over 240 fluid rebuilds,
+and both previously-audited exploits (blast whiff, parry spam) stayed closed.
+
 ## Phase 3: structure
 
 - `MatchState` owner (scores, rally, server, live checks). Deferred: it is a

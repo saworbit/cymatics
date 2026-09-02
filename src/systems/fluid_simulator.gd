@@ -121,7 +121,11 @@ func set_quality(preset: Quality) -> void:
 		return
 	_quality = preset
 	if not is_compute_ready:
+		# CPU fallback: the scratch arrays are sized to the old grid, so they
+		# have to be rebuilt or the next step indexes past their end.
 		grid_size = grid
+		_init_cpu_fallback()
+		grid_changed.emit(get_sim_texel_size())
 		return
 
 	# Detach the wrappers before the RIDs they point at are freed.
@@ -361,20 +365,28 @@ func _register_flow(pos: Vector2, vel: Vector2, radius: float, p_vorticity: floa
 		"decay": decay
 	})
 
+## Accumulate into the kinetic-energy scalar, dropping non-finite input.
+## clampf() propagates NaN, and this value drives the drone gain and a shader
+## uniform, so a single bad injection would poison both until the next reset.
+func _add_kinetic_energy(amount: float) -> void:
+	if not is_finite(amount):
+		return
+	_average_kinetic_energy = clampf(_average_kinetic_energy + amount, 50.0, 9000.0)
+
 func inject_force(world_pos: Vector2, force: Vector2, radius_px: float, color: Color) -> void:
 	_queue_splat(world_pos, force, radius_px, color, 0.0, 1.0)
 	_register_flow(world_pos, force * 0.8, radius_px, 0.0, 1.2, 0.9)
-	_average_kinetic_energy = clampf(_average_kinetic_energy + force.length() * 0.06, 50.0, 9000.0)
+	_add_kinetic_energy(force.length() * 0.06)
 
 func inject_vortex(world_pos: Vector2, swirl_strength: float, radius_px: float, color: Color) -> void:
 	_queue_splat(world_pos, Vector2(swirl_strength * 22.0, 0.0), radius_px, color, 1.0, 1.2)
 	_register_flow(world_pos, Vector2.ZERO, radius_px * 1.2, swirl_strength * 0.04, 1.8, 0.6)
-	_average_kinetic_energy = clampf(_average_kinetic_energy + absf(swirl_strength) * 45.0, 50.0, 9000.0)
+	_add_kinetic_energy(absf(swirl_strength) * 45.0)
 
 func inject_sink(world_pos: Vector2, pull_strength: float, radius_px: float, color: Color) -> void:
 	_queue_splat(world_pos, Vector2(pull_strength * 0.08, 0.0), radius_px, color, 2.0, 1.1)
 	_register_flow(world_pos, Vector2.ZERO, radius_px * 1.5, pull_strength * 0.002, 1.6, 0.7)
-	_average_kinetic_energy = clampf(_average_kinetic_energy + pull_strength * 0.08, 50.0, 9000.0)
+	_add_kinetic_energy(pull_strength * 0.08)
 
 func inject_shockwave(world_pos: Vector2, dir: Vector2, power: float, color: Color) -> void:
 	_queue_splat(world_pos, dir * (power * 0.14), 160.0, Color(color.r, color.g, color.b, 0.85), 0.0, 1.3)
@@ -454,6 +466,8 @@ func _seed_ambient(delta: float) -> void:
 
 func step_simulation(delta: float) -> void:
 	frame_counter += 1
+	if not is_finite(_average_kinetic_energy):
+		_average_kinetic_energy = 100.0
 	_average_kinetic_energy = lerpf(_average_kinetic_energy, 100.0, 0.02)
 
 	_seed_ambient(delta)
@@ -598,6 +612,11 @@ func step_simulation(delta: float) -> void:
 func _step_cpu_fallback(_delta: float) -> void:
 	var w := grid_size.x
 	var h := grid_size.y
+	# Defensive: the fallback arrays must match the grid. They can be stale if
+	# the grid changed without a re-init, and indexing past their end is a hard
+	# error rather than a glitch.
+	if _cpu_vel_x.size() != w * h:
+		_init_cpu_fallback()
 	
 	for splat in _pending_splats:
 		var center := Vector2(splat["point"].x * w, splat["point"].y * h)
