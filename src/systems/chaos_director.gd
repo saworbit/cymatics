@@ -109,7 +109,8 @@ func _spawn_powerup() -> void:
 		PowerupScript.Kind.PADDLE_FORTRESS,
 	]
 	var kind: int = kinds[randi() % kinds.size()]
-	var pos := Vector2(randf_range(720.0, 1200.0), randf_range(220.0, 860.0))
+	var side := -1.0 if randf() < 0.5 else 1.0
+	var pos := Vector2(960.0 + side * randf_range(40.0, 180.0), randf_range(240.0, 840.0))
 	p.collected.connect(_on_powerup_collected)
 	live_powerup = p
 	_attach_powerup.call_deferred(p, kind, pos)
@@ -117,8 +118,10 @@ func _spawn_powerup() -> void:
 func _attach_powerup(p, kind: int, pos: Vector2) -> void:
 	if host == null or not is_instance_valid(p):
 		return
-	host.add_child(p)
-	p.setup(kind, pos)
+	if p.get_parent() == null:
+		host.add_child(p)
+	var nudge := Vector2(randf_range(-70.0, 70.0), randf_range(-50.0, 50.0))
+	p.setup(kind, pos, nudge, fluid_sim, vfx_mgr, audio_mgr)
 	var PowerupScript = preload("res://src/actors/powerup.gd")
 	if vfx_mgr != null:
 		vfx_mgr.spawn_hit_burst(p.global_position, PowerupScript.COLORS[kind], 1.4)
@@ -287,6 +290,10 @@ func threat_ball_for(p: Paddle) -> Ball:
 		var score := incoming * 2.0 - dist * 0.01
 		if incoming > 0.0:
 			score += 400.0
+		var behind := (p.player_id == 1 and b.global_position.x > p.global_position.x + 20.0) \
+			or (p.player_id == 0 and b.global_position.x < p.global_position.x - 20.0)
+		if behind:
+			score += 900.0
 		if score > best_score:
 			best_score = score
 			best = b

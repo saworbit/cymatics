@@ -132,6 +132,37 @@ func trigger_sting(freq: float, amp: float) -> void:
 	var pitch := clampf(freq / 520.0, 0.65, 1.7)
 	_play(_sting, lerpf(-16.0, -7.0, clampf(amp, 0.0, 1.0)), pitch)
 
+func trigger_ui_hover() -> void:
+	var pitch := randf_range(1.25, 1.45)
+	_play(_hit_wall, -18.0, pitch)
+
+func trigger_ui_click() -> void:
+	_play(_hit_paddle, -8.0, 1.35)
+	_play(_parry, -12.0, 1.4)
+
+func trigger_ui_back() -> void:
+	_play(_hit_wall, -10.0, 0.85)
+
+func trigger_sandbox_tool() -> void:
+	_play(_parry, -9.0, randf_range(1.1, 1.3))
+
+func set_master_volume(linear: float) -> void:
+	var db := linear_to_db(clampf(linear, 0.0001, 1.0)) if linear > 0.001 else -80.0
+	var bus_idx := AudioServer.get_bus_index("Master")
+	if bus_idx >= 0:
+		AudioServer.set_bus_volume_db(bus_idx, db)
+
+func set_music_volume(linear: float) -> void:
+	var db := linear_to_db(clampf(linear, 0.0001, 1.0)) if linear > 0.001 else -80.0
+	if _music != null:
+		_music.volume_db = MUSIC_VOL + db
+
+func set_sfx_volume(linear: float) -> void:
+	var db := linear_to_db(clampf(linear, 0.0001, 1.0)) if linear > 0.001 else -80.0
+	for p in _pool:
+		if p != null and is_instance_valid(p):
+			p.volume_db = db
+
 func _nudge_duck(db: float) -> void:
 	_duck = minf(_duck + db, 8.0)
 

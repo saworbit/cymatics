@@ -57,6 +57,7 @@ var max_y := 1000.0
 var fluid_sim: FluidSimulator
 var vfx_mgr: VFXManager
 var audio_mgr: AudioManager
+var game_mgr: GameManager
 var ball: Ball
 
 func _ready() -> void:
@@ -128,10 +129,11 @@ func _setup_visuals() -> void:
 	face.setup(Vector2(92, 128), player_id == 1, lid)
 	face.position = Vector2(6.0 if player_id == 0 else -6.0, -8.0)
 
-func setup_dependencies(p_fluid_sim: FluidSimulator, p_vfx: VFXManager, p_audio: AudioManager) -> void:
+func setup_dependencies(p_fluid_sim: FluidSimulator, p_vfx: VFXManager, p_audio: AudioManager, p_game: GameManager = null) -> void:
 	fluid_sim = p_fluid_sim
 	vfx_mgr = p_vfx
 	audio_mgr = p_audio
+	game_mgr = p_game
 
 func set_ball_reference(p_ball: Ball) -> void:
 	ball = p_ball
@@ -318,6 +320,14 @@ func _update_timers(delta: float) -> void:
 		stun_time -= delta
 
 func _physics_process(delta: float) -> void:
+	if game_mgr != null and game_mgr.current_state == GameManager.State.MENU:
+		velocity = Vector2.ZERO
+		is_shooting = false
+		is_sucking = false
+		_update_visuals(delta)
+		_update_face()
+		return
+
 	if stun_time > 0.0:
 		velocity = velocity.move_toward(Vector2.ZERO, 3800.0 * delta)
 		move_and_slide()

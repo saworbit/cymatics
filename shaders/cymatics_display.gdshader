@@ -8,9 +8,53 @@ uniform vec3 background_color : source_color = vec3(0.02, 0.01, 0.045);
 uniform float impact_pulse : hint_range(0.0, 1.5) = 0.0;
 uniform float heat : hint_range(0.0, 1.0) = 0.0;
 uniform float flow_energy : hint_range(0.0, 1.0) = 0.35;
+uniform int palette_mode : hint_range(0, 4) = 0; // 0=Cyberpunk, 1=Solar, 2=Toxic, 3=Cosmos, 4=Prismatic
 
 vec3 plasma_ramp(float t) {
 	t = clamp(t, 0.0, 1.0);
+	if (palette_mode == 1) {
+		// Solar Flare
+		vec3 deep = vec3(0.08, 0.01, 0.02);
+		vec3 crimson = vec3(0.75, 0.08, 0.04);
+		vec3 orange = vec3(1.0, 0.45, 0.05);
+		vec3 gold = vec3(1.0, 0.88, 0.25);
+		vec3 c = mix(deep, crimson, smoothstep(0.0, 0.30, t));
+		c = mix(c, orange, smoothstep(0.25, 0.60, t));
+		c = mix(c, gold, smoothstep(0.55, 0.90, t));
+		c = mix(c, vec3(1.0, 0.98, 0.9), smoothstep(0.88, 1.0, t));
+		return c;
+	} else if (palette_mode == 2) {
+		// Toxic Venom
+		vec3 deep = vec3(0.01, 0.06, 0.04);
+		vec3 emerald = vec3(0.05, 0.65, 0.35);
+		vec3 lime = vec3(0.45, 1.0, 0.15);
+		vec3 yellow = vec3(0.95, 1.0, 0.28);
+		vec3 c = mix(deep, emerald, smoothstep(0.0, 0.30, t));
+		c = mix(c, lime, smoothstep(0.25, 0.60, t));
+		c = mix(c, yellow, smoothstep(0.55, 0.90, t));
+		c = mix(c, vec3(0.92, 1.0, 0.95), smoothstep(0.88, 1.0, t));
+		return c;
+	} else if (palette_mode == 3) {
+		// Deep Cosmos
+		vec3 deep = vec3(0.02, 0.01, 0.08);
+		vec3 indigo = vec3(0.18, 0.08, 0.65);
+		vec3 violet = vec3(0.68, 0.15, 0.95);
+		vec3 ice = vec3(0.35, 0.88, 1.0);
+		vec3 c = mix(deep, indigo, smoothstep(0.0, 0.30, t));
+		c = mix(c, violet, smoothstep(0.25, 0.60, t));
+		c = mix(c, ice, smoothstep(0.55, 0.90, t));
+		c = mix(c, vec3(0.95, 0.98, 1.0), smoothstep(0.88, 1.0, t));
+		return c;
+	} else if (palette_mode == 4) {
+		// Prismatic Rainbow
+		float hue = fract(t * 1.2 + TIME * 0.15);
+		vec3 rgb = clamp(abs(mod(hue * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+		rgb = mix(vec3(0.04, 0.0, 0.1), rgb, smoothstep(0.0, 0.25, t));
+		rgb = mix(rgb, vec3(1.0), smoothstep(0.85, 1.0, t));
+		return rgb;
+	}
+	
+	// Default: Cyberpunk
 	vec3 deep = vec3(0.06, 0.0, 0.18);
 	vec3 violet = vec3(0.42, 0.08, 0.72);
 	vec3 cyan = vec3(0.08, 0.78, 1.0);

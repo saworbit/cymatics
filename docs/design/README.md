@@ -8,3 +8,4 @@ The shipping title is **That's a Paddlin'**. These notes still use the CYMATICS 
 - [Audio](audio.md)
 - [Netcode](netcode.md)
 - [API](api.md)
+- [AI vs AI lab](ai-lab.md)

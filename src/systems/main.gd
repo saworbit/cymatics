@@ -13,10 +13,13 @@ extends Node2D
 @onready var paddle_ai: PaddleAI = $PaddleAI
 @onready var ball: Ball = $Ball
 @onready var hud: HUD = $HUD
+@onready var menu: MenuManager = $Menu
 
 var chaos
 var brick_matrix: BrickMatrix
 var tournament_mgr: TournamentManager
+var paddle_ai_left: PaddleAI
+var lab_recorder: Node
 var _display_mat: ShaderMaterial
 var _pulse := 0.0
 var _lock_zoom := 0.0
@@ -24,14 +27,15 @@ var _goal_glow_left: ColorRect
 var _goal_glow_right: ColorRect
 
 func _ready() -> void:
+	LabMode.parse()
 	vfx_mgr.camera = camera
 	camera.position = Vector2(960, 540)
 
-	paddle_left.setup_dependencies(fluid_sim, vfx_mgr, audio_mgr)
+	paddle_left.setup_dependencies(fluid_sim, vfx_mgr, audio_mgr, game_mgr)
 	paddle_left.set_ball_reference(ball)
-	paddle_right.setup_dependencies(fluid_sim, vfx_mgr, audio_mgr)
+	paddle_right.setup_dependencies(fluid_sim, vfx_mgr, audio_mgr, game_mgr)
 	paddle_right.set_ball_reference(ball)
-	ball.setup_dependencies(fluid_sim, vfx_mgr, audio_mgr)
+	ball.setup_dependencies(fluid_sim, vfx_mgr, audio_mgr, game_mgr)
 	ball.set_paddles(paddle_left, paddle_right)
 	paddle_ai.setup(paddle_right, ball)
 
@@ -60,12 +64,19 @@ func _ready() -> void:
 
 	game_mgr.impact_pulse.connect(func(amt: float): _pulse = maxf(_pulse, amt))
 	game_mgr.serving_started.connect(func(_id: int): _lock_zoom = 0.0)
+	game_mgr.lab_watch_toggled.connect(_toggle_watch_lab)
 
 	if fluid_display != null and fluid_display.material is ShaderMaterial:
 		_display_mat = fluid_display.material
 	_goal_glow_left = arena.get_node_or_null("GoalGlowLeft") as ColorRect
 	_goal_glow_right = arena.get_node_or_null("GoalGlowRight") as ColorRect
 	_update_display_texture()
+
+	if menu != null:
+		menu.setup(fluid_sim, game_mgr, audio_mgr, vfx_mgr, _display_mat)
+
+	if LabMode.active:
+		_start_lab(false)
 
 func _physics_process(delta: float) -> void:
 	if fluid_sim != null:
@@ -89,7 +100,13 @@ func _process(_delta: float) -> void:
 	_update_goal_glows()
 
 func _update_camera(delta: float) -> void:
-	if camera == null or ball == null:
+	if camera == null:
+		return
+	if game_mgr != null and game_mgr.current_state == GameManager.State.MENU:
+		camera.position = camera.position.lerp(Vector2(960, 540), clampf(delta * 6.0, 0.0, 1.0))
+		camera.zoom = camera.zoom.lerp(Vector2.ONE, clampf(delta * 8.0, 0.0, 1.0))
+		return
+	if ball == null:
 		return
 	var target := Vector2(960, 540)
 	if not ball.is_scored and not ball.is_serving:
@@ -106,6 +123,16 @@ func _update_camera(delta: float) -> void:
 	camera.zoom = camera.zoom.lerp(Vector2(z, z), clampf(delta * 8.0, 0.0, 1.0))
 
 func _update_goal_glows() -> void:
+	if game_mgr != null and game_mgr.current_state == GameManager.State.MENU:
+		if _goal_glow_left != null:
+			_goal_glow_left.color.a = 0.35
+			_goal_glow_left.size.x = 8.0
+		if _goal_glow_right != null:
+			_goal_glow_right.color.a = 0.35
+			_goal_glow_right.size.x = 8.0
+			_goal_glow_right.position.x = 1920.0 - 8.0
+		return
+
 	if _goal_glow_left != null:
 		var threat_l := 0.0
 		if ball != null and not ball.is_scored and not ball.is_serving and ball.velocity.x < 0.0:
@@ -120,6 +147,45 @@ func _update_goal_glows() -> void:
 		_goal_glow_right.color.a = lerpf(_goal_glow_right.color.a, 0.35 + threat_r * 0.65, 0.2)
 		_goal_glow_right.size.x = lerpf(_goal_glow_right.size.x, 8.0 + threat_r * 28.0, 0.2)
 		_goal_glow_right.position.x = 1920.0 - _goal_glow_right.size.x
+
+func _toggle_watch_lab() -> void:
+	if LabMode.active and paddle_ai_left != null:
+		return
+	LabMode.enable_watch()
+	_start_lab(true)
+
+func _start_lab(watch: bool) -> void:
+	paddle_left.is_ai = true
+	paddle_right.is_ai = true
+	if paddle_ai != null:
+		paddle_ai.enabled = true
+		paddle_ai.difficulty = 1.0
+	if paddle_ai_left == null:
+		paddle_ai_left = PaddleAI.new()
+		paddle_ai_left.name = "PaddleAILeft"
+		add_child(paddle_ai_left)
+		paddle_ai_left.setup(paddle_left, ball)
+		paddle_ai_left.game_mgr = game_mgr
+		paddle_ai_left.chaos = chaos
+		paddle_ai_left.difficulty = 1.0
+	game_mgr.paddle_ai_left = paddle_ai_left
+	game_mgr.is_ai_enabled = true
+	if not LabMode.watch:
+		game_mgr.points_to_win_set = 3
+		game_mgr.sets_to_win_match = 1
+	if LabMode.quiet and audio_mgr != null:
+		AudioServer.set_bus_mute(0, true)
+	LabMode.apply_clock()
+	if lab_recorder == null:
+		lab_recorder = preload("res://src/systems/lab_recorder.gd").new()
+		lab_recorder.name = "LabRecorder"
+		add_child(lab_recorder)
+		lab_recorder.setup(game_mgr, ball, paddle_left, paddle_right, chaos, paddle_ai_left, paddle_ai)
+	if hud != null:
+		hud.show_lab_banner(watch)
+	game_mgr.start_lab_match()
+	if watch:
+		game_mgr.callout.emit("LAB: AI vs AI", Color(1.0, 0.9, 0.4))
 
 func _update_display_texture() -> void:
 	if fluid_display != null and fluid_sim != null:

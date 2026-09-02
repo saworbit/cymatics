@@ -41,3 +41,7 @@ dist/
 # Logs
 *.log
 logs/
+
+# AI lab tapes (keep tools + docs, not the JSONL)
+lab/runs/**
+!lab/runs/.gitkeep

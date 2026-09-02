@@ -138,7 +138,7 @@ func _shatter(breaker_id: int) -> void:
 		var parent := get_parent()
 		if parent != null:
 			parent.call_deferred("add_child", p_up)
-			p_up.setup(reward_kind, global_position, drift_vel)
+			p_up.setup(reward_kind, global_position, drift_vel, fluid_sim, vfx_mgr, audio_mgr)
 			if chaos_director != null:
 				p_up.collected.connect(chaos_director._on_powerup_collected)
 

@@ -43,6 +43,8 @@ func setup(p_game_mgr: GameManager, p_p1: Paddle, p_p2: Paddle, p_tournament: To
 	game_mgr.gauntlet_mode_toggled.connect(update_gauntlet_status)
 	game_mgr.serving_started.connect(_on_serving)
 	game_mgr.callout.connect(show_callout)
+	game_mgr.match_started.connect(_on_match_started)
+	game_mgr.menu_entered.connect(_on_menu_entered)
 	if p_game_mgr.vfx_mgr != null:
 		p_game_mgr.vfx_mgr.flash_requested.connect(_on_flash)
 
@@ -91,6 +93,7 @@ func setup(p_game_mgr: GameManager, p_p1: Paddle, p_p2: Paddle, p_tournament: To
 		)
 
 	win_overlay.visible = false
+	visible = (game_mgr != null and game_mgr.current_state != GameManager.State.MENU)
 	milestone_banner.modulate.a = 0.0
 	_build_juice_nodes()
 	_fade_help_later()
@@ -205,7 +208,7 @@ func _build_juice_nodes() -> void:
 
 	_help = get_node_or_null("BottomPanel/StatusContainer/ControlsHelp") as Label
 	if _help != null:
-		_help.text = "THAT'S A PADDLIN'  ·  Padd vs Lin  ·  mouse/WASD  ·  LMB stream  ·  RMB suck  ·  SPACE blast/stun  ·  [G] Gauntlet  [M] music  [T] AI  [R] rematch"
+		_help.text = "THAT'S A PADDLIN'  ·  Padd vs Lin  ·  mouse/WASD  ·  LMB stream  ·  RMB suck  ·  SPACE blast/stun  ·  [G] Gauntlet  [M] music  [T] AI  [Y] lab  [R] rematch"
 
 	var title := Label.new()
 	title.name = "GameTitle"
@@ -300,7 +303,15 @@ func show_match_winner(winner_id: int) -> void:
 			game_mgr.paddle_right.emote(2, 4.0, "THAT'S A PADDLIN'!")
 
 func update_ai_status(enabled: bool) -> void:
+	if LabMode.active:
+		ai_status_label.text = "[Y] LAB AI vs AI"
+		return
 	ai_status_label.text = "[T] AI: %s" % ("ON" if enabled else "OFF · 2P")
+
+func show_lab_banner(watch: bool) -> void:
+	ai_status_label.text = "[Y] LAB AI vs AI" if watch else "LAB AI vs AI"
+	if _help != null:
+		_help.text = "LAB  ·  Padd (AI) vs Lin (AI)  ·  telemetry writing to lab/runs/"
 
 func update_zen_status(enabled: bool) -> void:
 	if enabled:
@@ -379,3 +390,17 @@ func _punch_scale(node: Control, amount: float) -> void:
 	node.scale = Vector2(amount, amount)
 	var tween := create_tween()
 	tween.tween_property(node, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+func _on_match_started() -> void:
+	visible = true
+	win_overlay.visible = false
+	if _help != null:
+		_help.modulate.a = 1.0
+		_fade_help_later()
+
+func _on_menu_entered() -> void:
+	visible = false
+	win_overlay.visible = false
+	_serve_hint.visible = false
+	if _serve_tween != null:
+		_serve_tween.kill()

@@ -24,6 +24,7 @@ Spiritual successor to [Plasma Pong](https://en.wikipedia.org/wiki/Plasma_Pong) 
 | R | Rematch / Retry |
 | Z | Zen mode |
 | M | Toggle match music |
+| Y | Lab: both paddles AI, write telemetry |
 
 Grab mid-rally orbs: **MULTI**, **GIANT**, **TINY**, **STUN**, **MAG**, **FIRE**, **HYPER**, plus shapeshifters **PRISM**, **CUBE**, **STAR**, **BLOB**, **SCOOP**, **WEDGE**, **AEGIS**.
 
@@ -56,6 +57,22 @@ That's a Paddlin'/
 - [Audio](docs/design/audio.md)
 - [Netcode (planned)](docs/design/netcode.md)
 - [API (planned)](docs/design/api.md)
+- [AI vs AI lab](docs/design/ai-lab.md)
+
+## AI lab
+
+Two AIs play each other and dump rally telemetry so we can iterate without sitting every point.
+
+Watch: press **Y** in a running match.
+
+Batch:
+
+```powershell
+.\tools\run_lab.ps1
+python tools/lab_analyze.py
+```
+
+Details: [docs/design/ai-lab.md](docs/design/ai-lab.md).
 
 ## Credits
 

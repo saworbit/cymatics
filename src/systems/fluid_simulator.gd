@@ -224,37 +224,44 @@ func _init_cpu_fallback() -> void:
 	_cpu_texture = ImageTexture.create_from_image(_cpu_image)
 
 func _queue_splat(world_pos: Vector2, force: Vector2, radius_px: float, color: Color, mode: float, strength: float = 1.0) -> void:
+	if not is_finite(world_pos.x) or not is_finite(world_pos.y):
+		return
+	if not is_finite(force.x) or not is_finite(force.y):
+		force = Vector2.ZERO
 	_pending_splats.append({
-		"point": Vector2(world_pos.x / 1920.0, world_pos.y / 1080.0),
+		"point": Vector2(clampf(world_pos.x / 1920.0, 0.0, 1.0), clampf(world_pos.y / 1080.0, 0.0, 1.0)),
 		"force": force,
 		"color": color,
-		"radius": radius_px / 1920.0,
-		"strength": strength,
-		"mode": mode
+		"radius": clampf(radius_px / 1920.0, 0.005, 0.4),
+		"mode": mode,
+		"strength": strength
 	})
 
-func _register_flow(world_pos: Vector2, vel: Vector2, radius_px: float, vorticity_amt: float, life: float, decay: float) -> void:
-	if _active_flow_nodes.size() > 48:
-		_active_flow_nodes.remove_at(0)
+func _register_flow(pos: Vector2, vel: Vector2, radius: float, p_vorticity: float, life: float = 1.2, decay: float = 1.0) -> void:
+	if not is_finite(pos.x) or not is_finite(pos.y):
+		return
+	if not is_finite(vel.x) or not is_finite(vel.y):
+		vel = Vector2.ZERO
+	if _active_flow_nodes.size() > 64:
+		_active_flow_nodes.pop_front()
 	_active_flow_nodes.append({
-		"pos": world_pos,
+		"pos": pos,
 		"vel": vel,
-		"radius": radius_px,
+		"radius": radius,
+		"vorticity": p_vorticity,
 		"life": life,
-		"decay": decay,
-		"vorticity": vorticity_amt
+		"decay": decay
 	})
 
 func inject_force(world_pos: Vector2, force: Vector2, radius_px: float, color: Color) -> void:
-	_queue_splat(world_pos, force * 0.12, radius_px, color, 0.0)
-	if force.length_squared() > 80.0:
-		_register_flow(world_pos, force * 0.55, radius_px * 1.35, 0.0, 1.8, 0.55)
-	_average_kinetic_energy = clampf(_average_kinetic_energy + force.length() * 0.18, 50.0, 9000.0)
+	_queue_splat(world_pos, force, radius_px, color, 0.0, 1.0)
+	_register_flow(world_pos, force * 0.8, radius_px, 0.0, 1.2, 0.9)
+	_average_kinetic_energy = clampf(_average_kinetic_energy + force.length() * 0.06, 50.0, 9000.0)
 
 func inject_vortex(world_pos: Vector2, swirl_strength: float, radius_px: float, color: Color) -> void:
-	_queue_splat(world_pos, Vector2(swirl_strength * 18.0, 0.0), radius_px, color, 1.0, 1.15)
-	_register_flow(world_pos, Vector2.ZERO, radius_px * 1.4, swirl_strength, 2.4, 0.42)
-	_average_kinetic_energy = clampf(_average_kinetic_energy + absf(swirl_strength) * 80.0, 50.0, 9000.0)
+	_queue_splat(world_pos, Vector2(swirl_strength * 22.0, 0.0), radius_px, color, 1.0, 1.2)
+	_register_flow(world_pos, Vector2.ZERO, radius_px * 1.2, swirl_strength * 0.04, 1.8, 0.6)
+	_average_kinetic_energy = clampf(_average_kinetic_energy + absf(swirl_strength) * 45.0, 50.0, 9000.0)
 
 func inject_sink(world_pos: Vector2, pull_strength: float, radius_px: float, color: Color) -> void:
 	_queue_splat(world_pos, Vector2(pull_strength * 0.08, 0.0), radius_px, color, 2.0, 1.1)
@@ -270,36 +277,53 @@ func inject_dye(world_pos: Vector2, color: Color, radius_px: float) -> void:
 	_queue_splat(world_pos, Vector2.ZERO, radius_px, color, 0.0, 0.85)
 
 func sample_velocity_at(world_pos: Vector2) -> Vector2:
+	if not is_finite(world_pos.x) or not is_finite(world_pos.y):
+		return Vector2.ZERO
 	if _cpu_fallback:
-		var gx := int(clampf(world_pos.x / 1920.0 * grid_size.x, 0, grid_size.x - 1))
-		var gy := int(clampf(world_pos.y / 1080.0 * grid_size.y, 0, grid_size.y - 1))
+		if _cpu_vel_x.is_empty() or _cpu_vel_y.is_empty() or grid_size.x <= 0 or grid_size.y <= 0:
+			return Vector2.ZERO
+		var nx := clampf(world_pos.x / 1920.0, 0.0, 0.9999)
+		var ny := clampf(world_pos.y / 1080.0, 0.0, 0.9999)
+		var gx := clampi(int(nx * float(grid_size.x)), 0, grid_size.x - 1)
+		var gy := clampi(int(ny * float(grid_size.y)), 0, grid_size.y - 1)
 		var idx := gy * grid_size.x + gx
+		if idx < 0 or idx >= _cpu_vel_x.size() or idx >= _cpu_vel_y.size():
+			return Vector2.ZERO
 		return Vector2(_cpu_vel_x[idx], _cpu_vel_y[idx]) * 20.0
 	
 	var vel_total := Vector2.ZERO
 	for node in _active_flow_nodes:
-		var delta: Vector2 = world_pos - node["pos"]
+		var npos: Vector2 = node.get("pos", Vector2.ZERO) as Vector2
+		if not is_finite(npos.x) or not is_finite(npos.y):
+			continue
+		var delta: Vector2 = world_pos - npos
 		var dist := delta.length()
-		var r: float = maxf(node["radius"] as float, 8.0)
+		var r: float = maxf(float(node.get("radius", 8.0)), 8.0)
 		if dist < r * 3.2:
-			var life_n: float = clampf((node["life"] as float) / 1.8, 0.15, 1.2)
+			var life_n: float = clampf(float(node.get("life", 0.0)) / 1.8, 0.15, 1.2)
 			var inf: float = exp(-(dist * dist) / (r * r * 1.15)) * life_n
-			vel_total += (node["vel"] as Vector2) * (inf * 0.85)
-			var vort: float = node["vorticity"]
+			var nvel: Vector2 = node.get("vel", Vector2.ZERO) as Vector2
+			vel_total += nvel * (inf * 0.85)
+			var vort: float = float(node.get("vorticity", 0.0))
 			if absf(vort) > 0.01 and dist > 6.0:
 				var tang := Vector2(-delta.y, delta.x) / dist
 				vel_total += tang * (vort * inf * 140.0)
 	return vel_total
 
 func sample_curl_at(world_pos: Vector2) -> float:
+	if not is_finite(world_pos.x) or not is_finite(world_pos.y):
+		return 0.0
 	var curl_total := 0.0
 	for node in _active_flow_nodes:
-		var delta: Vector2 = world_pos - node["pos"]
+		var npos: Vector2 = node.get("pos", Vector2.ZERO) as Vector2
+		if not is_finite(npos.x) or not is_finite(npos.y):
+			continue
+		var delta: Vector2 = world_pos - npos
 		var dist := delta.length()
-		var r: float = maxf(node["radius"] as float, 8.0)
+		var r: float = maxf(float(node.get("radius", 8.0)), 8.0)
 		if dist < r * 3.0:
 			var inf: float = exp(-(dist * dist) / (r * r))
-			curl_total += (node["vorticity"] as float) * inf * clampf((node["life"] as float) / 1.8, 0.2, 1.0)
+			curl_total += float(node.get("vorticity", 0.0)) * inf * clampf(float(node.get("life", 0.0)) / 1.8, 0.2, 1.0)
 	return clampf(curl_total, -5.0, 5.0)
 
 func get_average_kinetic_energy() -> float:

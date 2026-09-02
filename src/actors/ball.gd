@@ -8,6 +8,7 @@ signal overdrive_entered
 signal cymatic_lock_entered
 signal near_miss(side: int, pos: Vector2)
 signal served(dir: Vector2)
+signal carom_hit(cut: float, new_spin: float)
 
 enum Shape { ROUND, TRIANGLE, CUBE, STAR, RUGBY }
 
@@ -16,6 +17,7 @@ enum Shape { ROUND, TRIANGLE, CUBE, STAR, RUGBY }
 @export var max_speed := 2100.0
 @export var min_speed := 560.0
 @export var bounce_damping := 1.0
+const MAGNUS_ACCEL := 620.0
 
 var spin := 0.0
 var rally_hits := 0
@@ -37,6 +39,7 @@ var last_hit_speed := 0.0
 var fluid_sim: FluidSimulator
 var vfx_mgr: VFXManager
 var audio_mgr: AudioManager
+var game_mgr: GameManager
 var paddle_left: Paddle
 var paddle_right: Paddle
 
@@ -56,10 +59,11 @@ var face
 @onready var visual_corona: ColorRect = $VisualCorona
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
 
-func setup_dependencies(p_fluid_sim: FluidSimulator, p_vfx: VFXManager, p_audio: AudioManager) -> void:
+func setup_dependencies(p_fluid_sim: FluidSimulator, p_vfx: VFXManager, p_audio: AudioManager, p_game: GameManager = null) -> void:
 	fluid_sim = p_fluid_sim
 	vfx_mgr = p_vfx
 	audio_mgr = p_audio
+	game_mgr = p_game
 
 func set_paddles(p_left: Paddle, p_right: Paddle) -> void:
 	paddle_left = p_left
@@ -74,6 +78,13 @@ func _ready() -> void:
 	_setup_face()
 	if collision_shape and collision_shape.shape is CircleShape2D:
 		(collision_shape.shape as CircleShape2D).radius = radius
+	collision_mask = collision_mask | 4
+
+func _exit_tree() -> void:
+	if _trail != null and is_instance_valid(_trail):
+		_trail.queue_free()
+	if _trail_core != null and is_instance_valid(_trail_core):
+		_trail_core.queue_free()
 
 func _setup_orb() -> void:
 	if visual_core != null:
@@ -297,6 +308,11 @@ func reset_ball(start_pos: Vector2, dir: Vector2) -> void:
 	_update_visuals()
 
 func _physics_process(delta: float) -> void:
+	if game_mgr != null and game_mgr.current_state == GameManager.State.MENU:
+		velocity = Vector2.ZERO
+		visible = false
+		return
+
 	if is_scored:
 		return
 
@@ -368,7 +384,7 @@ func _integrate_flight(delta: float) -> void:
 		spin = move_toward(spin, 0.0, delta * 0.12)
 		var mag_dir := Vector2(-heading.y, heading.x)
 		var lift_mult := 1.75 if shape_type == Shape.STAR else 1.0
-		velocity += mag_dir * (spin * 620.0 * lift_mult * delta)
+		velocity += mag_dir * (spin * MAGNUS_ACCEL * lift_mult * delta)
 		if absf(curl) > 1.4:
 			velocity += mag_dir * (signf(curl) * 280.0 * delta)
 
@@ -421,6 +437,8 @@ func _integrate_flight(delta: float) -> void:
 		var collider := collision.get_collider()
 		if collider is Paddle:
 			_handle_paddle_collision(collider, collision.get_normal())
+		elif collider is Powerup:
+			_handle_powerup_carom(collider as Powerup, collision)
 		elif collider.has_method("on_ball_hit"):
 			# Brick matrix interaction
 			if velocity.dot(collision.get_normal()) < 0.0:
@@ -507,22 +525,140 @@ func _check_near_miss() -> void:
 	elif velocity.x < 0.0:
 		_crossed_right = false
 
+func magnus_accel(p_vel: Vector2 = Vector2.ZERO, p_spin: float = INF) -> Vector2:
+	var vel := velocity if p_vel == Vector2.ZERO else p_vel
+	var s := spin if p_spin == INF else p_spin
+	var spd := vel.length()
+	if spd < 1.0:
+		return Vector2.ZERO
+	var heading := vel / spd
+	return Vector2(-heading.y, heading.x) * (s * MAGNUS_ACCEL)
+
+func resolve_carom(orb: Powerup, bpos: Vector2, bvel: Vector2, bspin: float) -> Dictionary:
+	var empty := {
+		"valid": false,
+		"n": Vector2.RIGHT,
+		"cut": 0.0,
+		"closing": 0.0,
+		"ball_vel": bvel,
+		"ball_spin": bspin,
+		"orb_impulse": Vector2.ZERO,
+	}
+	if orb == null:
+		return empty
+	var n := orb.global_position - bpos
+	if n.length_squared() < 0.0001:
+		n = bvel.normalized() if bvel.length_squared() > 1.0 else Vector2.RIGHT
+	n = n.normalized()
+	var v_rel := bvel - orb.drift_velocity
+	var closing := v_rel.dot(n)
+	if closing < 8.0:
+		return empty
+	var heading := v_rel.normalized() if v_rel.length_squared() > 1.0 else n
+	var tangent := Vector2(-n.y, n.x)
+	var cut := heading.x * n.y - heading.y * n.x
+	var m1 := 1.0
+	var m2 := orb.MASS
+	var restitution := 0.78
+	var impulse := (1.0 + restitution) * maxf(closing, 80.0) / ((1.0 / m1) + (1.0 / m2))
+	var new_vel := bvel - n * (impulse / m1) + tangent * (cut * closing * 0.22)
+	var spd := new_vel.length()
+	if spd < 1.0:
+		new_vel = -n * min_speed
+	else:
+		new_vel = new_vel.normalized() * clampf(spd, min_speed * 0.82, _rally_speed_cap())
+	var english := clampf(cut * 1.55 + bspin * 0.18, -1.0, 1.0)
+	var orb_impulse := n * (impulse / m2) + tangent * (cut * impulse / m2 * 0.28)
+	return {
+		"valid": true,
+		"n": n,
+		"cut": cut,
+		"closing": closing,
+		"ball_vel": new_vel,
+		"ball_spin": english,
+		"orb_impulse": orb_impulse,
+	}
+
+func preview_powerup_carom(orb: Powerup) -> Dictionary:
+	var miss := { "hit": false, "t": 0.0, "velocity": velocity, "spin": spin, "orb_velocity": Vector2.ZERO }
+	if orb == null or not is_instance_valid(orb):
+		return miss
+	var w := global_position - orb.global_position
+	var v := velocity - orb.drift_velocity
+	var a := v.dot(v)
+	if a < 4.0:
+		return miss
+	var t := -w.dot(v) / a
+	if t < 0.0 or t > 1.35:
+		return miss
+	var closest := w + v * t
+	if closest.length() > radius + orb.RADIUS + 10.0:
+		return miss
+	var at := global_position + velocity * t
+	var solved := resolve_carom(orb, at, velocity, spin)
+	if not solved["valid"]:
+		return miss
+	return {
+		"hit": true,
+		"t": t,
+		"velocity": solved["ball_vel"],
+		"spin": solved["ball_spin"],
+		"orb_velocity": orb.drift_velocity + solved["orb_impulse"],
+		"cut": solved["cut"],
+		"n": solved["n"],
+	}
+
+func _handle_powerup_carom(orb: Powerup, collision: KinematicCollision2D = null) -> void:
+	if orb == null or not orb.can_carom():
+		return
+	var bpos := global_position
+	if collision != null:
+		bpos = collision.get_position() - (orb.global_position - global_position).normalized() * radius
+	var solved := resolve_carom(orb, bpos, velocity, spin)
+	if not solved["valid"]:
+		return
+	velocity = solved["ball_vel"]
+	spin = solved["ball_spin"]
+	orb.apply_carom(solved["orb_impulse"], solved["n"])
+	global_position -= solved["n"] * 12.0
+	_squash = Vector2(0.7, 1.25)
+	var hit_pos := collision.get_position() if collision != null else global_position
+	if fluid_sim != null:
+		fluid_sim.inject_shockwave(hit_pos, solved["n"], 900.0, Color(1.0, 0.95, 0.7, 0.7))
+		fluid_sim.inject_vortex(hit_pos, solved["ball_spin"] * 5.0, 70.0, Color(1.0, 0.9, 0.4, 0.55))
+	if vfx_mgr != null:
+		vfx_mgr.apply_camera_kick(solved["n"], 0.22)
+	if audio_mgr != null:
+		audio_mgr.trigger_impact(solved["closing"], hit_pos, false)
+	carom_hit.emit(solved["cut"], solved["ball_spin"])
+	if absf(solved["cut"]) > 0.32:
+		emote(2, 0.3, "CUT")
+	else:
+		emote(2, 0.25, "KNOCK")
+
 func _handle_paddle_collision(paddle: Paddle, _normal: Vector2) -> void:
-	# Directional debounce: Ignore if ball is already moving away from this paddle
-	if paddle.player_id == 0 and velocity.x > 40.0:
-		return
-	elif paddle.player_id == 1 and velocity.x < -40.0:
-		return
+	var behind := false
+	if paddle.player_id == 0:
+		behind = global_position.x < paddle.global_position.x - 10.0
+	else:
+		behind = global_position.x > paddle.global_position.x + 10.0
+
+	# Ignore only when the ball is in front and already leaving. A backhand still counts.
+	if not behind:
+		if paddle.player_id == 0 and velocity.x > 40.0:
+			return
+		elif paddle.player_id == 1 and velocity.x < -40.0:
+			return
 
 	rally_hits += 1
 	last_hitter_id = paddle.player_id
 	touch_mask |= (1 << paddle.player_id)
 	if paddle.player_id == 0:
 		_crossed_left = false
-		global_position.x = maxf(global_position.x, paddle.global_position.x + 28.0)
+		global_position.x = paddle.global_position.x + 36.0 if behind else maxf(global_position.x, paddle.global_position.x + 28.0)
 	else:
 		_crossed_right = false
-		global_position.x = minf(global_position.x, paddle.global_position.x - 28.0)
+		global_position.x = paddle.global_position.x - 36.0 if behind else minf(global_position.x, paddle.global_position.x - 28.0)
 
 	var hit_offset := clampf((global_position.y - paddle.global_position.y) / 70.0, -1.0, 1.0)
 	var forward_dir := Vector2.RIGHT if paddle.player_id == 0 else Vector2.LEFT
@@ -563,9 +699,9 @@ func _handle_paddle_collision(paddle: Paddle, _normal: Vector2) -> void:
 	last_hit_was_perfect = perfect
 	if perfect:
 		speed_boost += 0.22
-		spin = clampf(-hit_offset * 1.4 + paddle.velocity.y * 0.004, -1.0, 1.0)
+		spin = clampf(-hit_offset * 1.45 + paddle.velocity.y * 0.0045, -1.0, 1.0)
 	else:
-		spin = clampf(-hit_offset * 0.85 + paddle.velocity.y * 0.002, -1.0, 1.0)
+		spin = clampf(-hit_offset * 1.12 + paddle.velocity.y * 0.003, -1.0, 1.0)
 
 	var bonus_flat := 48.0
 	if paddle.shape_type == Paddle.Shape.FORTRESS:

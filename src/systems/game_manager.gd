@@ -7,6 +7,9 @@ signal score_updated(score_p1: int, score_p2: int)
 signal set_won(winner: int, sets_p1: int, sets_p2: int)
 signal match_won(winner: int)
 signal match_reset
+signal match_started
+signal game_paused(is_paused: bool)
+signal menu_entered
 signal rally_updated(hits: int)
 signal milestone_reached(milestone_name: String)
 signal callout(text: String, color: Color)
@@ -15,13 +18,15 @@ signal zen_mode_toggled(enabled: bool)
 signal gauntlet_mode_toggled(enabled: bool)
 signal serving_started(server_id: int)
 signal impact_pulse(amount: float)
+signal lab_watch_toggled
 
-enum State { SERVING, PLAYING, GOAL_SCORED, MATCH_OVER }
+enum State { MENU, SERVING, PLAYING, PAUSED, GOAL_SCORED, MATCH_OVER }
 
 @export var points_to_win_set := 7
 @export var sets_to_win_match := 2
 
-var current_state := State.SERVING
+var current_state := State.MENU
+var _previous_state := State.SERVING
 var score_p1 := 0
 var score_p2 := 0
 var sets_p1 := 0
@@ -38,6 +43,7 @@ var ball: Ball
 var paddle_left: Paddle
 var paddle_right: Paddle
 var paddle_ai: PaddleAI
+var paddle_ai_left: PaddleAI
 var vfx_mgr: VFXManager
 var audio_mgr: AudioManager
 var chaos
@@ -62,7 +68,8 @@ func setup_references(p_ball: Ball, p_p1: Paddle, p_p2: Paddle, p_ai: PaddleAI, 
 	)
 	ball.near_miss.connect(_on_near_miss)
 	ball.served.connect(func(_d: Vector2):
-		current_state = State.PLAYING
+		if current_state != State.MENU:
+			current_state = State.PLAYING
 		rally_hits = 0
 		rally_updated.emit(0)
 	)
@@ -74,9 +81,22 @@ func setup_references(p_ball: Ball, p_p1: Paddle, p_p2: Paddle, p_ai: PaddleAI, 
 	paddle_right.stunned.connect(func(_d: float): _banner("STUNNED", Color(0.7, 0.9, 1.0)))
 	paddle_left.armed.connect(func(): _banner("CANNON ARMED", paddle_left.team_color))
 	paddle_right.armed.connect(func(): _banner("CANNON ARMED", paddle_right.team_color))
-	call_deferred("start_serve", 0)
 
 func _input(event: InputEvent) -> void:
+	if event.is_action_pressed("toggle_lab"):
+		lab_watch_toggled.emit()
+		get_viewport().set_input_as_handled()
+		return
+
+	if event.is_action_pressed("ui_cancel") or (event is InputEventKey and event.pressed and event.keycode == KEY_P and not event.echo):
+		if current_state != State.MENU:
+			toggle_pause()
+			get_viewport().set_input_as_handled()
+			return
+
+	if current_state == State.MENU or current_state == State.PAUSED:
+		return
+
 	if event.is_action_pressed("toggle_ai"):
 		is_ai_enabled = not is_ai_enabled
 		if paddle_ai != null:
@@ -108,7 +128,10 @@ func _input(event: InputEvent) -> void:
 func start_serve(server_id: int) -> void:
 	if current_state == State.MATCH_OVER:
 		return
-	Engine.time_scale = 1.0
+	if LabMode.active:
+		LabMode.apply_clock()
+	else:
+		Engine.time_scale = 1.0
 	current_state = State.SERVING
 	next_server = server_id
 	rally_hits = 0
@@ -258,7 +281,8 @@ func _maybe_finish_set() -> bool:
 	if sets_p1 >= sets_to_win_match or sets_p2 >= sets_to_win_match:
 		var match_winner := 0 if sets_p1 >= sets_to_win_match else 1
 		current_state = State.MATCH_OVER
-		Engine.time_scale = 1.0
+		if not LabMode.active:
+			Engine.time_scale = 1.0
 		match_won.emit(match_winner)
 		if vfx_mgr != null:
 			vfx_mgr.flash_screen(Color.WHITE, 0.4, 0.35)
@@ -282,6 +306,12 @@ func _announce_stakes() -> void:
 		_banner("SET POINT", Color(1.0, 0.75, 0.25))
 
 func _tune_ai_for_drama() -> void:
+	if LabMode.active:
+		if paddle_ai != null:
+			paddle_ai.difficulty = 1.0
+		if paddle_ai_left != null:
+			paddle_ai_left.difficulty = 1.0
+		return
 	if paddle_ai == null or not is_ai_enabled:
 		return
 	var lead := score_p2 - score_p1
@@ -344,7 +374,10 @@ func on_clone_goal(scorer_id: int) -> void:
 		)
 
 func restart_match() -> void:
-	Engine.time_scale = 1.0
+	if LabMode.active:
+		LabMode.apply_clock()
+	else:
+		Engine.time_scale = 1.0
 	score_p1 = 0
 	score_p2 = 0
 	sets_p1 = 0
@@ -369,3 +402,145 @@ func restart_match() -> void:
 	if is_gauntlet_mode and tournament_mgr != null:
 		tournament_mgr.restart_stage()
 	start_serve(0)
+
+func start_lab_match() -> void:
+	is_ai_enabled = true
+	is_gauntlet_mode = false
+	is_zen_mode = false
+	if tournament_mgr != null:
+		tournament_mgr.stop_tournament()
+	if paddle_ai != null:
+		paddle_ai.enabled = true
+		paddle_ai.difficulty = 1.0
+	if paddle_ai_left != null:
+		paddle_ai_left.enabled = true
+		paddle_ai_left.difficulty = 1.0
+	if paddle_right != null:
+		paddle_right.is_ai = true
+	if paddle_left != null:
+		paddle_left.is_ai = true
+	ai_toggled.emit(true)
+	gauntlet_mode_toggled.emit(false)
+	zen_mode_toggled.emit(false)
+	match_started.emit()
+	restart_match()
+
+func start_arcade_match(difficulty_mult: float = 1.0) -> void:
+	is_ai_enabled = true
+	is_gauntlet_mode = false
+	is_zen_mode = false
+	if tournament_mgr != null:
+		tournament_mgr.stop_tournament()
+	if paddle_ai != null:
+		paddle_ai.enabled = true
+		paddle_ai.difficulty = difficulty_mult
+	if paddle_right != null:
+		paddle_right.is_ai = true
+		paddle_right.team_color = Color(1.0, 0.0, 0.67)
+		paddle_right.mutate_shape(Paddle.Shape.STANDARD, 0.0)
+	if paddle_left != null:
+		paddle_left.is_ai = false
+		paddle_left.mutate_shape(Paddle.Shape.STANDARD, 0.0)
+	ai_toggled.emit(true)
+	gauntlet_mode_toggled.emit(false)
+	zen_mode_toggled.emit(false)
+	match_started.emit()
+	restart_match()
+
+func start_gauntlet_match() -> void:
+	is_gauntlet_mode = true
+	is_ai_enabled = true
+	is_zen_mode = false
+	if paddle_left != null:
+		paddle_left.is_ai = false
+		paddle_left.mutate_shape(Paddle.Shape.STANDARD, 0.0)
+	if paddle_right != null:
+		paddle_right.is_ai = true
+	if tournament_mgr != null:
+		tournament_mgr.start_tournament()
+	gauntlet_mode_toggled.emit(true)
+	ai_toggled.emit(true)
+	zen_mode_toggled.emit(false)
+	match_started.emit()
+	restart_match()
+
+func start_pvp_match() -> void:
+	is_ai_enabled = false
+	is_gauntlet_mode = false
+	is_zen_mode = false
+	if tournament_mgr != null:
+		tournament_mgr.stop_tournament()
+	if paddle_ai != null:
+		paddle_ai.enabled = false
+	if paddle_right != null:
+		paddle_right.is_ai = false
+		paddle_right.team_color = Color(1.0, 0.0, 0.67)
+		paddle_right.mutate_shape(Paddle.Shape.STANDARD, 0.0)
+	if paddle_left != null:
+		paddle_left.is_ai = false
+		paddle_left.mutate_shape(Paddle.Shape.STANDARD, 0.0)
+	ai_toggled.emit(false)
+	gauntlet_mode_toggled.emit(false)
+	zen_mode_toggled.emit(false)
+	match_started.emit()
+	restart_match()
+
+func start_zen_match() -> void:
+	is_zen_mode = true
+	is_gauntlet_mode = false
+	if tournament_mgr != null:
+		tournament_mgr.stop_tournament()
+	zen_mode_toggled.emit(true)
+	gauntlet_mode_toggled.emit(false)
+	match_started.emit()
+	restart_match()
+
+func toggle_pause() -> void:
+	if current_state == State.PAUSED:
+		resume_match()
+	elif current_state in [State.PLAYING, State.SERVING, State.GOAL_SCORED]:
+		pause_match()
+
+func pause_match() -> void:
+	if current_state == State.MENU or current_state == State.PAUSED:
+		return
+	_previous_state = current_state
+	current_state = State.PAUSED
+	Engine.time_scale = 0.0
+	game_paused.emit(true)
+
+func resume_match() -> void:
+	if current_state != State.PAUSED:
+		return
+	current_state = _previous_state if _previous_state != State.PAUSED else State.PLAYING
+	if LabMode.active:
+		LabMode.apply_clock()
+	else:
+		Engine.time_scale = 1.0
+	game_paused.emit(false)
+
+func return_to_menu() -> void:
+	_serve_token += 1
+	if LabMode.active:
+		LabMode.apply_clock()
+	else:
+		Engine.time_scale = 1.0
+	current_state = State.MENU
+	if chaos != null:
+		chaos.clear_point()
+	if tournament_mgr != null:
+		tournament_mgr.stop_tournament()
+	if ball != null:
+		ball.velocity = Vector2.ZERO
+		ball.global_position = Vector2(960, 540)
+		ball.is_serving = false
+		ball.is_scored = false
+		ball.serve_paddle = null
+	if paddle_left != null:
+		paddle_left.global_position = Vector2(180, 540)
+		paddle_left.velocity = Vector2.ZERO
+	if paddle_right != null:
+		paddle_right.global_position = Vector2(1740, 540)
+		paddle_right.velocity = Vector2.ZERO
+	game_paused.emit(false)
+	menu_entered.emit()

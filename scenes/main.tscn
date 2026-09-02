@@ -10,6 +10,7 @@
 [ext_resource type="PackedScene" uid="uid://c8vqy32jx11m4" path="res://scenes/paddle.tscn" id="8_paddle_scene"]
 [ext_resource type="PackedScene" uid="uid://d3mql51ny89k1" path="res://scenes/ball.tscn" id="9_ball_scene"]
 [ext_resource type="PackedScene" uid="uid://e4xpv82ma71b9" path="res://scenes/hud.tscn" id="10_hud_scene"]
+[ext_resource type="PackedScene" uid="uid://c9x7v8m4ny3q2" path="res://scenes/menu.tscn" id="11_menu_scene"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main_script")
@@ -46,3 +47,5 @@ z_index = 20
 script = ExtResource("3_vfx_script")
 
 [node name="HUD" parent="." instance=ExtResource("10_hud_scene")]
+
+[node name="Menu" parent="." instance=ExtResource("11_menu_scene")]
