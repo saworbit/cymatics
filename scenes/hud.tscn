@@ -1,7 +1,8 @@
-[gd_scene format=3 uid="uid://e4xpv82ma71b9"]
+[gd_scene load_steps=10 format=3 uid="uid://e4xpv82ma71b9"]
 
 [ext_resource type="Script" path="res://src/systems/hud.gd" id="1_script"]
 [ext_resource type="Shader" path="res://shaders/vfx/frosted_glass.gdshader" id="2_shader"]
+[ext_resource type="Shader" path="res://shaders/vfx/momentum_comet.gdshader" id="3_comet_shader"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_glass"]
 shader = ExtResource("2_shader")
@@ -10,68 +11,172 @@ shader_parameter/chromatic_dispersion = 0.0035
 shader_parameter/glass_tint = Color(0.04, 0.02, 0.08, 0.75)
 shader_parameter/corner_radius = 0.05
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_p1"]
-bg_color = Color(0, 0.9, 1, 0.8)
-corner_radius_top_left = 4
-corner_radius_top_right = 4
-corner_radius_bottom_right = 4
-corner_radius_bottom_left = 4
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_comet_p1"]
+shader = ExtResource("3_comet_shader")
+shader_parameter/team_color = Color(0, 0.898, 1, 1)
+shader_parameter/fill = 0.0
+shader_parameter/trail = 0.0
+shader_parameter/head = 0.0
+shader_parameter/ready = 0.0
+shader_parameter/dir = 1.0
+shader_parameter/aspect = 13.6
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_p2"]
-bg_color = Color(1, 0, 0.67, 0.8)
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_comet_p2"]
+shader = ExtResource("3_comet_shader")
+shader_parameter/team_color = Color(1, 0, 0.667, 1)
+shader_parameter/fill = 0.0
+shader_parameter/trail = 0.0
+shader_parameter/head = 0.0
+shader_parameter/ready = 0.0
+shader_parameter/dir = -1.0
+shader_parameter/aspect = 13.6
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_chip"]
+content_margin_left = 10.0
+content_margin_top = 2.0
+content_margin_right = 10.0
+content_margin_bottom = 2.0
+bg_color = Color(0.08, 0.03, 0.14, 0.85)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1, 0.45, 0.1, 0.9)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_dot"]
+bg_color = Color(1, 0.95, 0.7, 1)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_p2_fill"]
+bg_color = Color(1, 0, 0.667, 0.85)
 corner_radius_top_left = 4
 corner_radius_top_right = 4
 corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
+shadow_color = Color(1, 0, 0.667, 0.35)
+shadow_size = 4
 
 [node name="HUD" type="CanvasLayer"]
+process_mode = 3
 script = ExtResource("1_script")
 
-[node name="TopPanel" type="PanelContainer" parent="."]
-material = SubResource("ShaderMaterial_glass")
+[node name="GameTitle" type="Label" parent="."]
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
-offset_left = -300.0
-offset_top = 20.0
-offset_right = 300.0
-offset_bottom = 110.0
+offset_left = -280.0
+offset_top = 4.0
+offset_right = 280.0
+offset_bottom = 22.0
 grow_horizontal = 2
-
-[node name="ScoreContainer" type="HBoxContainer" parent="TopPanel"]
-layout_mode = 2
-alignment = 1
-theme_override_constants/separation = 40
-
-[node name="P1Score" type="Label" parent="TopPanel/ScoreContainer"]
-layout_mode = 2
-pivot_offset = Vector2(30, 25)
-theme_override_colors/font_color = Color(0, 0.9, 1, 1)
-theme_override_font_sizes/font_size = 48
-text = "00"
+mouse_filter = 2
+theme_type_variation = &"Muted"
+theme_override_colors/font_color = Color(1, 0.8, 0, 0.75)
+text = "THAT'S A PADDLIN'"
 horizontal_alignment = 1
 
-[node name="SetsLabel" type="Label" parent="TopPanel/ScoreContainer"]
+[node name="TopBar" type="Control" parent="."]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -320.0
+offset_top = 22.0
+offset_right = 320.0
+offset_bottom = 112.0
+grow_horizontal = 2
+mouse_filter = 2
+
+[node name="TopGlass" type="ColorRect" parent="TopBar"]
+material = SubResource("ShaderMaterial_glass")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.04, 0.02, 0.08, 0.75)
+
+[node name="TopPanel" type="PanelContainer" parent="TopBar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="ScoreContainer" type="HBoxContainer" parent="TopBar/TopPanel"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.8, 0.8, 0.9, 1)
-theme_override_font_sizes/font_size = 20
+mouse_filter = 2
+theme_override_constants/separation = 40
+alignment = 1
+
+[node name="P1ScoreSlot" type="Control" parent="TopBar/TopPanel/ScoreContainer"]
+unique_name_in_owner = true
+clip_contents = true
+custom_minimum_size = Vector2(96, 58)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="P1Score" type="Label" parent="TopBar/TopPanel/ScoreContainer/P1ScoreSlot"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_type_variation = &"Score"
+theme_override_colors/font_color = Color(0, 0.898, 1, 1)
+text = "00"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="SetsLabel" type="Label" parent="TopBar/TopPanel/ScoreContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
 text = "SETS: 0 - 0"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="P2Score" type="Label" parent="TopPanel/ScoreContainer"]
-layout_mode = 2
-pivot_offset = Vector2(30, 25)
-theme_override_colors/font_color = Color(1, 0, 0.67, 1)
-theme_override_font_sizes/font_size = 48
-text = "00"
-horizontal_alignment = 1
-
-[node name="RallyContainer" type="Control" parent="TopPanel"]
+[node name="P2ScoreSlot" type="Control" parent="TopBar/TopPanel/ScoreContainer"]
+unique_name_in_owner = true
+clip_contents = true
+custom_minimum_size = Vector2(96, 58)
 layout_mode = 2
 mouse_filter = 2
 
-[node name="RallyCount" type="Label" parent="TopPanel/RallyContainer"]
+[node name="P2Score" type="Label" parent="TopBar/TopPanel/ScoreContainer/P2ScoreSlot"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_type_variation = &"Score"
+theme_override_colors/font_color = Color(1, 0, 0.667, 1)
+text = "00"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="RallyContainer" type="Control" parent="TopBar/TopPanel"]
+layout_mode = 2
+mouse_filter = 2
+
+[node name="RallyCount" type="Label" parent="TopBar/TopPanel/RallyContainer"]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 7
 anchor_left = 0.5
@@ -79,60 +184,161 @@ anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
 offset_left = -100.0
-offset_top = -25.0
+offset_top = -22.0
 offset_right = 100.0
+offset_bottom = -2.0
 grow_horizontal = 2
 grow_vertical = 0
-theme_override_colors/font_color = Color(1, 0.85, 0.2, 1)
-theme_override_font_sizes/font_size = 15
+mouse_filter = 2
+theme_type_variation = &"Small"
+theme_override_colors/font_color = Color(1, 0.8, 0, 1)
 text = "RALLY: 0"
 horizontal_alignment = 1
 
-[node name="CenterContainer" type="Control" parent="."]
-layout_mode = 3
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -400.0
-offset_top = -200.0
-offset_right = 400.0
-offset_bottom = -100.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-
-[node name="MilestoneBanner" type="Label" parent="CenterContainer"]
+[node name="StateChip" type="PanelContainer" parent="TopBar"]
+unique_name_in_owner = true
+visible = false
 layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = 14.0
+offset_top = -13.0
+offset_right = 154.0
+offset_bottom = 13.0
+grow_horizontal = 0
+grow_vertical = 2
+pivot_offset = Vector2(0, 13)
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_chip")
+
+[node name="StateChipText" type="Label" parent="TopBar/StateChip"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+theme_type_variation = &"Small"
+theme_override_colors/font_color = Color(1, 0.6, 0.2, 1)
+text = "OVERDRIVE"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ServeDots" type="HBoxContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -24.0
+offset_top = 114.0
+offset_right = 24.0
+offset_bottom = 124.0
+grow_horizontal = 2
+mouse_filter = 2
+theme_override_constants/separation = 9
+alignment = 1
+
+[node name="Dot1" type="Panel" parent="ServeDots"]
+custom_minimum_size = Vector2(10, 10)
+layout_mode = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_dot")
+
+[node name="Dot2" type="Panel" parent="ServeDots"]
+custom_minimum_size = Vector2(10, 10)
+layout_mode = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_dot")
+
+[node name="Dot3" type="Panel" parent="ServeDots"]
+custom_minimum_size = Vector2(10, 10)
+layout_mode = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_dot")
+
+[node name="ComboLabel" type="Label" parent="."]
+unique_name_in_owner = true
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -200.0
+offset_top = 120.0
+offset_right = 200.0
+offset_bottom = 160.0
+grow_horizontal = 2
+pivot_offset = Vector2(200, 20)
+mouse_filter = 2
+theme_type_variation = &"H2"
+theme_override_colors/font_color = Color(1, 0.8, 0, 1)
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Callout" type="Label" parent="."]
+unique_name_in_owner = true
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -300.0
-offset_top = -30.0
-offset_right = 300.0
-offset_bottom = 30.0
+offset_left = -700.0
+offset_top = -190.0
+offset_right = 700.0
+offset_bottom = -90.0
 grow_horizontal = 2
 grow_vertical = 2
-pivot_offset = Vector2(300, 30)
-theme_override_colors/font_color = Color(1, 0.9, 0.4, 1)
-theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.8)
-theme_override_constants/shadow_offset_x = 2
-theme_override_constants/shadow_offset_y = 2
-theme_override_font_sizes/font_size = 36
-text = "— OVERDRIVE —"
+pivot_offset = Vector2(700, 50)
+mouse_filter = 2
+theme_type_variation = &"Callout"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="SubCallout" type="Label" parent="."]
+unique_name_in_owner = true
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -600.0
+offset_top = -90.0
+offset_right = 600.0
+offset_bottom = -50.0
+grow_horizontal = 2
+grow_vertical = 2
+pivot_offset = Vector2(600, 20)
+mouse_filter = 2
+theme_type_variation = &"H2"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ServeHint" type="Label" parent="."]
+unique_name_in_owner = true
+visible = false
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -360.0
+offset_top = -190.0
+offset_right = 360.0
+offset_bottom = -150.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+theme_type_variation = &"H2"
+theme_override_colors/font_color = Color(1, 0.95, 0.7, 1)
+text = "PADD  ·  SPACE / CLICK TO SERVE"
 horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="BottomPanel" type="Control" parent="."]
-layout_mode = 3
 anchors_preset = 12
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_top = -90.0
+offset_top = -110.0
 grow_horizontal = 2
 grow_vertical = 0
 mouse_filter = 2
@@ -143,23 +349,51 @@ anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
 offset_left = 50.0
-offset_top = -70.0
+offset_top = -96.0
 offset_right = 350.0
-offset_bottom = -20.0
+offset_bottom = -14.0
 grow_vertical = 0
+mouse_filter = 2
+theme_override_constants/separation = 4
 
 [node name="P1Label" type="Label" parent="BottomPanel/P1Container"]
+unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0, 0.9, 1, 1)
-theme_override_font_sizes/font_size = 14
+mouse_filter = 2
+theme_type_variation = &"Small"
+theme_override_colors/font_color = Color(0, 0.898, 1, 1)
 text = "PADD"
 
 [node name="P1Momentum" type="ProgressBar" parent="BottomPanel/P1Container"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 22)
 layout_mode = 2
-size_flags_vertical = 3
-theme_override_styles/fill = SubResource("StyleBoxFlat_p1")
+mouse_filter = 2
 max_value = 100.0
 show_percentage = false
+
+[node name="P1Comet" type="ColorRect" parent="BottomPanel/P1Container/P1Momentum"]
+unique_name_in_owner = true
+material = SubResource("ShaderMaterial_comet_p1")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(1, 1, 1, 1)
+
+[node name="P1Ready" type="Label" parent="BottomPanel/P1Container"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+mouse_filter = 2
+theme_type_variation = &"Small"
+theme_override_colors/font_color = Color(0, 0.898, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0.898, 1, 0.35)
+theme_override_constants/outline_size = 4
+text = "RESONANCE READY"
 
 [node name="P2Container" type="VBoxContainer" parent="BottomPanel"]
 layout_mode = 1
@@ -169,25 +403,56 @@ anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = -350.0
-offset_top = -70.0
+offset_top = -96.0
 offset_right = -50.0
-offset_bottom = -20.0
+offset_bottom = -14.0
 grow_horizontal = 0
 grow_vertical = 0
+mouse_filter = 2
+theme_override_constants/separation = 4
 
 [node name="P2Label" type="Label" parent="BottomPanel/P2Container"]
+unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(1, 0, 0.67, 1)
-theme_override_font_sizes/font_size = 14
+mouse_filter = 2
+theme_type_variation = &"Small"
+theme_override_colors/font_color = Color(1, 0, 0.667, 1)
 text = "LIN"
 horizontal_alignment = 2
 
 [node name="P2Momentum" type="ProgressBar" parent="BottomPanel/P2Container"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 22)
 layout_mode = 2
-size_flags_vertical = 3
-theme_override_styles/fill = SubResource("StyleBoxFlat_p2")
+mouse_filter = 2
+theme_override_styles/fill = SubResource("StyleBoxFlat_p2_fill")
 max_value = 100.0
+fill_mode = 1
 show_percentage = false
+
+[node name="P2Comet" type="ColorRect" parent="BottomPanel/P2Container/P2Momentum"]
+unique_name_in_owner = true
+material = SubResource("ShaderMaterial_comet_p2")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(1, 1, 1, 1)
+
+[node name="P2Ready" type="Label" parent="BottomPanel/P2Container"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+mouse_filter = 2
+theme_type_variation = &"Small"
+theme_override_colors/font_color = Color(1, 0, 0.667, 1)
+theme_override_colors/font_outline_color = Color(1, 0, 0.667, 0.35)
+theme_override_constants/outline_size = 4
+text = "RESONANCE READY"
+horizontal_alignment = 2
 
 [node name="StatusContainer" type="VBoxContainer" parent="BottomPanel"]
 layout_mode = 1
@@ -196,58 +461,175 @@ anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -450.0
+offset_left = -760.0
 offset_top = -70.0
-offset_right = 450.0
-offset_bottom = -15.0
+offset_right = 760.0
+offset_bottom = -12.0
 grow_horizontal = 2
 grow_vertical = 0
-alignment = 1
+mouse_filter = 2
+alignment = 2
 
 [node name="AIStatus" type="Label" parent="BottomPanel/StatusContainer"]
+unique_name_in_owner = true
 layout_mode = 2
+mouse_filter = 2
+theme_type_variation = &"Small"
 theme_override_colors/font_color = Color(0.7, 0.8, 0.9, 1)
-theme_override_font_sizes/font_size = 14
-text = "[T] AI: ON (Right)"
+text = "[T] AI: ON"
 horizontal_alignment = 1
 
 [node name="ControlsHelp" type="Label" parent="BottomPanel/StatusContainer"]
+unique_name_in_owner = true
 layout_mode = 2
-theme_override_colors/font_color = Color(0.5, 0.5, 0.6, 1)
-theme_override_font_sizes/font_size = 12
-text = "THAT'S A PADDLIN'  ·  Padd vs Lin  ·  mouse/WASD  ·  LMB stream  ·  RMB suck  ·  SPACE blast/stun/super  ·  [T] AI  [R] rematch   (codename CYMATICS)"
+mouse_filter = 2
+theme_type_variation = &"Muted"
+text = "P1: WASD/MOUSE · LMB stream · RMB hold suck = capture, release = slingshot · SPACE tap blast / hold charge · SHIFT resonance      P2: ARROWS · , stream · . suck · / blast · R-SHIFT resonance      ESC pause"
 horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="ScreenFlash" type="ColorRect" parent="."]
+unique_name_in_owner = true
+z_index = 80
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(1, 1, 1, 0)
 
 [node name="WinOverlay" type="Control" parent="."]
+unique_name_in_owner = true
 visible = false
+z_index = 90
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
 
-[node name="WinPanel" type="PanelContainer" parent="WinOverlay"]
-material = SubResource("ShaderMaterial_glass")
+[node name="Backdrop" type="ColorRect" parent="WinOverlay"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.02, 0.01, 0.05, 0.7)
+
+[node name="WinFrame" type="Control" parent="WinOverlay"]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -350.0
-offset_top = -150.0
-offset_right = 350.0
-offset_bottom = 150.0
+offset_left = -420.0
+offset_top = -240.0
+offset_right = 420.0
+offset_bottom = 240.0
+grow_horizontal = 2
+grow_vertical = 2
+pivot_offset = Vector2(420, 240)
+mouse_filter = 2
+
+[node name="Glass" type="ColorRect" parent="WinOverlay/WinFrame"]
+material = SubResource("ShaderMaterial_glass")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.04, 0.02, 0.08, 0.8)
+
+[node name="WinPanel" type="PanelContainer" parent="WinOverlay/WinFrame"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="WinLabel" type="Label" parent="WinOverlay/WinPanel"]
+[node name="WinLayout" type="VBoxContainer" parent="WinOverlay/WinFrame/WinPanel"]
 layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.85, 0.2, 1)
-theme_override_font_sizes/font_size = 32
-text = "PLAYER 1 WINS THE MATCH!
+mouse_filter = 2
+theme_override_constants/separation = 12
+alignment = 1
 
-Press [R] to Play Again"
+[node name="WinEyebrow" type="Label" parent="WinOverlay/WinFrame/WinPanel/WinLayout"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+theme_type_variation = &"Muted"
+text = "MATCH OVER"
 horizontal_alignment = 1
-vertical_alignment = 1
+
+[node name="WinnerName" type="Label" parent="WinOverlay/WinFrame/WinPanel/WinLayout"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+theme_type_variation = &"Display"
+text = "PADD"
+horizontal_alignment = 1
+
+[node name="WinSubtitle" type="Label" parent="WinOverlay/WinFrame/WinPanel/WinLayout"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+theme_type_variation = &"H2"
+text = "WINS THE MATCH"
+horizontal_alignment = 1
+
+[node name="WinScore" type="Label" parent="WinOverlay/WinFrame/WinPanel/WinLayout"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+text = "SETS  2 - 0"
+horizontal_alignment = 1
+
+[node name="WinStats" type="Label" parent="WinOverlay/WinFrame/WinPanel/WinLayout"]
+unique_name_in_owner = true
+layout_mode = 2
+mouse_filter = 2
+theme_type_variation = &"Small"
+text = "LONGEST RALLY: 12"
+horizontal_alignment = 1
+
+[node name="Spacer" type="Control" parent="WinOverlay/WinFrame/WinPanel/WinLayout"]
+custom_minimum_size = Vector2(0, 8)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="WinButtons" type="HBoxContainer" parent="WinOverlay/WinFrame/WinPanel/WinLayout"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 20
+alignment = 1
+
+[node name="RematchBtn" type="Button" parent="WinOverlay/WinFrame/WinPanel/WinLayout/WinButtons"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(220, 50)
+layout_mode = 2
+theme_type_variation = &"ButtonAccent"
+text = "REMATCH"
+
+[node name="NextStageBtn" type="Button" parent="WinOverlay/WinFrame/WinPanel/WinLayout/WinButtons"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(220, 50)
+layout_mode = 2
+theme_type_variation = &"ButtonAccent"
+text = "NEXT STAGE"
+
+[node name="WinMenuBtn" type="Button" parent="WinOverlay/WinFrame/WinPanel/WinLayout/WinButtons"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(220, 50)
+layout_mode = 2
+text = "MAIN MENU"

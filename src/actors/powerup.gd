@@ -35,9 +35,10 @@ var _consumed := false
 var _carom_lock := 0.0
 var _roll := 0.0
 var _visual: ColorRect
-var _label: Label
 var _grab: Area2D
 
+## Names used by the collect callout (ChaosDirector). The field glyph itself
+## carries identity; there is no text tag on the pickup any more.
 const LABELS := {
 	Kind.MULTIBALL: "MULTI",
 	Kind.GROW: "GIANT",
@@ -139,26 +140,15 @@ func _build_visual() -> void:
 	mat.shader = load("res://shaders/vfx/powerup.gdshader")
 	_visual.material = mat
 	add_child(_visual)
-	_label = Label.new()
-	_label.position = Vector2(-46, 36)
-	_label.size = Vector2(92, 22)
-	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_label.add_theme_font_size_override("font_size", 14)
-	_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
-	_label.add_theme_constant_override("shadow_offset_x", 1)
-	_label.add_theme_constant_override("shadow_offset_y", 1)
-	_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_label)
 	_refresh_visual()
 
+## The glyph shader carries the powerup identity; no text tag.
 func _refresh_visual() -> void:
-	if _label != null:
-		_label.text = LABELS.get(kind, "?")
-		_label.add_theme_color_override("font_color", COLORS.get(kind, Color.WHITE))
 	if _visual != null and _visual.material is ShaderMaterial:
 		var col: Color = COLORS.get(kind, Color.WHITE)
 		(_visual.material as ShaderMaterial).set_shader_parameter("core_color", Color.WHITE)
 		(_visual.material as ShaderMaterial).set_shader_parameter("glow_color", col)
+		(_visual.material as ShaderMaterial).set_shader_parameter("kind", int(kind))
 
 func _physics_process(delta: float) -> void:
 	if _consumed:

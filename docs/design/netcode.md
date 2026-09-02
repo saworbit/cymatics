@@ -1,5 +1,7 @@
 # CYMATICS — Netcode Specification
 
+> **Status (2026-09-02): planned, not implemented.** There is no networking, rollback, or determinism in the current build. This document is a design target only.
+
 > **Version:** 2.0  
 > **Date:** 2026-08-29  
 > **Engine:** Godot 4.7.2+  

@@ -38,9 +38,18 @@ dist/
 *.so
 *.dylib
 
+# Python
+__pycache__/
+*.pyc
+
 # Logs
 *.log
 logs/
+
+# Generated audio. Deterministic output of tools/gen_sfx.py and
+# tools/gen_music.py (~15 MB of WAV); regenerate instead of committing.
+assets/audio/sfx/gen/
+assets/audio/music/stems/
 
 # AI lab tapes (keep tools + docs, not the JSONL)
 lab/runs/**

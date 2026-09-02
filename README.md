@@ -12,19 +12,17 @@ Spiritual successor to [Plasma Pong](https://en.wikipedia.org/wiki/Plasma_Pong) 
 
 ## Play
 
-| Control | Action |
-| --- | --- |
-| Mouse on your side, or WASD | Move Padd |
-| LMB / J | Stream plasma |
-| RMB / K | Suction vortex |
-| Space | Blast / stun cannon / super |
-| Time Space on contact | **PERFECT** parry |
-| G | Toggle Gauntlet Mode (5 Boss Stages) |
-| T | Toggle AI (Lin) |
-| R | Rematch / Retry |
-| Z | Zen mode |
-| M | Toggle match music |
-| Y | Lab: both paddles AI, write telemetry |
+| Padd (P1) | Lin (P2, local duel) | Action |
+| --- | --- | --- |
+| Mouse or WASD, pad 1 left stick | Arrows, pad 2 left stick | Move |
+| LMB / J / RT | `,` / RT | Stream plasma |
+| RMB / K / LT | `.` / LT | Suck. Hold near the ball to **capture** it into an orbit, release to **slingshot** it along the tangent |
+| Space / pad A | `/` / pad A | Tap: blast. Hold: **charge** a bigger blast. Tap as the ball arrives: **PERFECT** parry |
+| Left Shift / pad B | Right Shift / pad B | Resonance super (when the momentum bar is full) |
+| Move axis while serving | | Aim the serve (4 s serve clock, then it auto-serves) |
+| Esc, P, Start | | Pause |
+
+Mouse and keyboard hand P1 off to whichever you touched last. Dev hotkeys in a match: **R** rematch, **T** toggle AI, **G** gauntlet, **Z** zen, **M** music, **Y** AI-vs-AI lab.
 
 Grab mid-rally orbs: **MULTI**, **GIANT**, **TINY**, **STUN**, **MAG**, **FIRE**, **HYPER**, plus shapeshifters **PRISM**, **CUBE**, **STAR**, **BLOB**, **SCOOP**, **WEDGE**, **AEGIS**.
 
@@ -33,12 +31,21 @@ First to 7, win by 2, best of 3.
 ## Run locally
 
 1. Install **Godot 4.7.2** (Forward+).
-2. Open this folder as a project (`project.godot`).
-3. Press Play. Main scene is `scenes/main.tscn`.
+2. Generate the audio (once, needs Python with `numpy` and `scipy`):
+
+   ```bash
+   python tools/gen_sfx.py && python tools/gen_music.py
+   ```
+
+   Sound effects and the synth soundtrack are synthesised, not stored in the
+   repo. The generators are deterministic and take about ten seconds. Skip
+   this and the game still runs, just mostly silent.
+3. Open this folder as a project (`project.godot`).
+4. Press Play. Main scene is `scenes/main.tscn`.
 
 ```text
 That's a Paddlin'/
-├── assets/           # icons and static art
+├── assets/           # audio, UI theme, icons
 ├── docs/             # design docs (codename CYMATICS)
 ├── scenes/           # Godot scenes
 ├── shaders/          # display, VFX, compute fluids
@@ -46,8 +53,11 @@ That's a Paddlin'/
 │   ├── actors/       # Padd, Lin, Bam, orbs, bolts
 │   └── systems/      # match flow, fluids, audio, HUD
 ├── third_party/      # historical Plasma Pong source (not MIT)
+├── tools/            # lab runner, SFX generator, screenshot driver, script check
 └── .github/          # CI and templates
 ```
+
+Polish status and roadmap: [`docs/POLISH_PLAN.md`](docs/POLISH_PLAN.md). Agent notes: [`CLAUDE.md`](CLAUDE.md).
 
 ## Design docs
 

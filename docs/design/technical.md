@@ -1,5 +1,7 @@
 # CYMATICS — Technical Specification
 
+> **Status (2026-09-02): vision document, not ground truth.** The shipping build is a single Godot scene with a GDScript ball, a 256x144 compute fluid, and file-based audio. SSBO ball physics, rollback ring buffers, GDExtension DSP, Rapier2D, and WebGPU targets described below are **not implemented**. See [`docs/POLISH_PLAN.md`](../POLISH_PLAN.md) for what exists and what is planned.
+
 > **Version:** 2.1  
 > **Date:** 2026-08-29  
 > **Engine:** Godot 4.7.2+  

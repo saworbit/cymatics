@@ -1,16 +1,73 @@
-[gd_scene format=3 uid="uid://d4e7q21nx78p3"]
+[gd_scene load_steps=14 format=3 uid="uid://d4e7q21nx78p3"]
 
 [ext_resource type="Shader" path="res://shaders/cymatics_display.gdshader" id="1_display_shader"]
+[ext_resource type="Shader" path="res://shaders/vfx/wall_grid.gdshader" id="2_wall_shader"]
+[ext_resource type="Shader" path="res://shaders/vfx/center_line.gdshader" id="3_center_shader"]
+[ext_resource type="Script" path="res://src/systems/goal_wall.gd" id="4_goal_wall_script"]
+[ext_resource type="Script" path="res://src/systems/arena_ambience.gd" id="5_ambience_script"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_display"]
 shader = ExtResource("1_display_shader")
-shader_parameter/bloom_intensity = 1.15
-shader_parameter/chromatic_aberration = 1.6
-shader_parameter/vignette_strength = 0.48
-shader_parameter/film_grain = 0.025
-shader_parameter/background_color = Color(0.025, 0.012, 0.05, 1)
+shader_parameter/sim_texel = Vector2(0.00390625, 0.00694444)
+shader_parameter/bloom_intensity = 1.0
+shader_parameter/chromatic_aberration = 1.4
+shader_parameter/vignette_strength = 0.32
+shader_parameter/film_grain = 0.02
+shader_parameter/background_color = Color(0.022, 0.01, 0.045, 1)
 shader_parameter/impact_pulse = 0.0
 shader_parameter/heat = 0.0
+shader_parameter/flow_energy = 0.35
+shader_parameter/exposure = 1.0
+shader_parameter/palette_mode = 0
+
+[sub_resource type="Environment" id="Environment_glow"]
+background_mode = 3
+glow_enabled = true
+glow_levels/1 = 0.0
+glow_levels/2 = 0.6
+glow_levels/3 = 1.0
+glow_levels/4 = 0.8
+glow_levels/5 = 0.5
+glow_levels/6 = 0.25
+glow_levels/7 = 0.0
+glow_normalized = false
+glow_intensity = 0.9
+glow_strength = 1.0
+glow_bloom = 0.04
+glow_blend_mode = 0
+glow_hdr_threshold = 1.0
+glow_hdr_scale = 1.6
+glow_hdr_luminance_cap = 12.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_wall_top"]
+shader = ExtResource("2_wall_shader")
+shader_parameter/base_color = Color(0.05, 0.02, 0.1, 0.92)
+shader_parameter/line_color = Color(0.55, 0.4, 0.95, 1)
+shader_parameter/energy = 0.0
+shader_parameter/hit = 0.0
+shader_parameter/hit_x = 0.5
+shader_parameter/cell_px = 22.0
+shader_parameter/rect_size = Vector2(1920, 40)
+shader_parameter/flip_y = 0.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_wall_bottom"]
+shader = ExtResource("2_wall_shader")
+shader_parameter/base_color = Color(0.05, 0.02, 0.1, 0.92)
+shader_parameter/line_color = Color(0.55, 0.4, 0.95, 1)
+shader_parameter/energy = 0.0
+shader_parameter/hit = 0.0
+shader_parameter/hit_x = 0.5
+shader_parameter/cell_px = 22.0
+shader_parameter/rect_size = Vector2(1920, 40)
+shader_parameter/flip_y = 1.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_center"]
+shader = ExtResource("3_center_shader")
+shader_parameter/line_color = Color(0.55, 0.4, 0.95, 1)
+shader_parameter/breath = 0.0
+shader_parameter/energy = 0.0
+shader_parameter/dash_px = 26.0
+shader_parameter/rect_size = Vector2(24, 984)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_top"]
 size = Vector2(1920, 40)
@@ -19,6 +76,9 @@ size = Vector2(1920, 40)
 size = Vector2(1920, 40)
 
 [node name="Arena" type="Node2D"]
+
+[node name="Glow" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_glow")
 
 [node name="FluidDisplay" type="Sprite2D" parent="."]
 material = SubResource("ShaderMaterial_display")
@@ -38,36 +98,61 @@ position = Vector2(960, 1060)
 shape = SubResource("RectangleShape2D_bottom")
 
 [node name="WallTopVisual" type="ColorRect" parent="BoundaryWalls"]
+material = SubResource("ShaderMaterial_wall_top")
 offset_right = 1920.0
 offset_bottom = 40.0
-color = Color(0.05, 0.02, 0.1, 0.92)
+mouse_filter = 2
+color = Color(1, 1, 1, 1)
 
 [node name="WallBottomVisual" type="ColorRect" parent="BoundaryWalls"]
+material = SubResource("ShaderMaterial_wall_bottom")
 offset_top = 1040.0
 offset_right = 1920.0
 offset_bottom = 1080.0
-color = Color(0.05, 0.02, 0.1, 0.92)
+mouse_filter = 2
+color = Color(1, 1, 1, 1)
 
-[node name="CenterLine" type="Line2D" parent="."]
-points = PackedVector2Array(960, 48, 960, 1032)
-width = 3.0
-default_color = Color(0.55, 0.4, 0.9, 0.22)
+[node name="CenterLine" type="ColorRect" parent="."]
+material = SubResource("ShaderMaterial_center")
+offset_left = 948.0
+offset_top = 48.0
+offset_right = 972.0
+offset_bottom = 1032.0
+mouse_filter = 2
+color = Color(1, 1, 1, 1)
 
 [node name="CenterDot" type="Line2D" parent="."]
 points = PackedVector2Array(948, 540, 972, 540)
 width = 12.0
 default_color = Color(0.7, 0.55, 1, 0.35)
 
+[node name="Ambience" type="Node2D" parent="."]
+script = ExtResource("5_ambience_script")
+
+[node name="GoalWallLeft" type="Node2D" parent="."]
+script = ExtResource("4_goal_wall_script")
+side = 0
+team_color = Color(0, 0.898, 1, 1)
+
+[node name="GoalWallRight" type="Node2D" parent="."]
+script = ExtResource("4_goal_wall_script")
+side = 1
+team_color = Color(1, 0, 0.667, 1)
+
 [node name="GoalGlowLeft" type="ColorRect" parent="."]
+visible = false
 offset_left = 0.0
 offset_top = 40.0
 offset_right = 14.0
 offset_bottom = 1040.0
+mouse_filter = 2
 color = Color(0, 0.9, 1, 0.55)
 
 [node name="GoalGlowRight" type="ColorRect" parent="."]
+visible = false
 offset_left = 1906.0
 offset_top = 40.0
 offset_right = 1920.0
 offset_bottom = 1040.0
+mouse_filter = 2
 color = Color(1, 0, 0.67, 0.55)

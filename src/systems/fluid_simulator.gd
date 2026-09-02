@@ -8,12 +8,22 @@ extends Node
 signal step_completed(frame_index: int)
 
 @export var grid_size := Vector2i(256, 144)
-@export var jacobi_iterations := 20
+## Must be even: the ping-pong solve has to end on tex_pressure[0].
+@export var jacobi_iterations := 20:
+	set(v):
+		jacobi_iterations = maxi(2, v + (v % 2))
 @export var sub_steps := 3
 @export var viscosity := 0.0001
 @export var vorticity := 0.95
 @export var surface_tension := 0.11
 @export var dissipation := 0.995
+## Dye decays faster than velocity so the field reads as plasma, not paint.
+@export var dye_dissipation := 0.989
+## Subtractive per-sub-step dye decay; clears the faint haze that pure
+## multiplicative decay never removes.
+@export var dye_floor := 0.0010
+## Global multiplier on dye deposition from every splat.
+@export var dye_gain := 0.42
 
 var rd: RenderingDevice
 var is_compute_ready := false
@@ -49,6 +59,7 @@ var p_idx := 0
 var frame_counter := 0
 
 var display_texture: Texture2DRD
+var velocity_texture: Texture2DRD
 var _pending_splats: Array[Dictionary] = []
 var _average_kinetic_energy := 200.0
 
@@ -70,6 +81,12 @@ func _ready() -> void:
 	_init_simulation()
 
 func _exit_tree() -> void:
+	# Detach the Texture2DRD wrappers first so materials stop referencing RIDs
+	# that are about to be freed.
+	if display_texture != null:
+		display_texture.texture_rd_rid = RID()
+	if velocity_texture != null:
+		velocity_texture.texture_rd_rid = RID()
 	_cleanup_rids()
 
 func _init_simulation() -> void:
@@ -82,7 +99,7 @@ func _init_simulation() -> void:
 			print("[FluidSimulator] Vulkan Compute Pipeline Initialized. Grid: ", grid_size)
 			return
 
-	print("[FluidSimulator] Warning: Initializing CPU Hybrid fallback.")
+	push_warning("[FluidSimulator] Compute unavailable; using CPU fallback.")
 	_init_cpu_fallback()
 
 func _init_compute_pipeline() -> bool:
@@ -98,19 +115,26 @@ func _init_compute_pipeline() -> bool:
 	format_dye.height = grid_size.y
 	format_dye.usage_bits = RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
 
+	# Pressure and divergence are scalar fields; R32F halves their bandwidth.
+	var format_scalar := RDTextureFormat.new()
+	format_scalar.format = RenderingDevice.DATA_FORMAT_R32_SFLOAT
+	format_scalar.width = grid_size.x
+	format_scalar.height = grid_size.y
+	format_scalar.usage_bits = RenderingDevice.TEXTURE_USAGE_STORAGE_BIT
+
 	var view := RDTextureView.new()
 
 	for i in range(2):
 		var tv := rd.texture_create(format_vel, view)
 		var td := rd.texture_create(format_dye, view)
-		var tp := rd.texture_create(format_vel, view)
+		var tp := rd.texture_create(format_scalar, view)
 		if not (tv.is_valid() and td.is_valid() and tp.is_valid()):
 			return false
 		tex_velocity.append(tv)
 		tex_dye.append(td)
 		tex_pressure.append(tp)
 	
-	tex_divergence = rd.texture_create(format_vel, view)
+	tex_divergence = rd.texture_create(format_scalar, view)
 	if not tex_divergence.is_valid():
 		return false
 
@@ -140,6 +164,8 @@ func _init_compute_pipeline() -> bool:
 
 	display_texture = Texture2DRD.new()
 	display_texture.texture_rd_rid = tex_dye[0]
+	velocity_texture = Texture2DRD.new()
+	velocity_texture.texture_rd_rid = tex_velocity[0]
 
 	return true
 
@@ -289,7 +315,7 @@ func sample_velocity_at(world_pos: Vector2) -> Vector2:
 		var idx := gy * grid_size.x + gx
 		if idx < 0 or idx >= _cpu_vel_x.size() or idx >= _cpu_vel_y.size():
 			return Vector2.ZERO
-		return Vector2(_cpu_vel_x[idx], _cpu_vel_y[idx]) * 20.0
+		return (Vector2(_cpu_vel_x[idx], _cpu_vel_y[idx]) * 4.0).limit_length(600.0)
 	
 	var vel_total := Vector2.ZERO
 	for node in _active_flow_nodes:
@@ -337,9 +363,9 @@ func _seed_ambient(delta: float) -> void:
 	var t := _ambient_t
 	var left := Vector2(460.0 + sin(t * 0.35) * 80.0, 540.0 + cos(t * 0.27) * 160.0)
 	var right := Vector2(1460.0 + sin(t * 0.35 + 2.1) * 80.0, 540.0 + cos(t * 0.27 + 1.4) * 160.0)
-	var fog := Color(0.22, 0.04, 0.40, 0.028)
-	_queue_splat(left, Vector2(10.0, 0.0), 180.0, fog, 1.0, 0.16)
-	_queue_splat(right, Vector2(-10.0, 0.0), 180.0, fog, 1.0, 0.16)
+	var fog := Color(0.30, 0.06, 0.55, 0.16)
+	_queue_splat(left, Vector2(10.0, 0.0), 220.0, fog, 1.0, 0.16)
+	_queue_splat(right, Vector2(-10.0, 0.0), 220.0, fog, 1.0, 0.16)
 	if fmod(t, 0.45) < delta + 0.001:
 		_register_flow(left, Vector2(50.0, -24.0), 180.0, 1.4, 1.5, 0.48)
 		_register_flow(right, Vector2(-50.0, 24.0), 180.0, -1.4, 1.5, 0.48)
@@ -373,88 +399,90 @@ func step_simulation(delta: float) -> void:
 	var groups_x := int(ceil(grid_size.x / 8.0))
 	var groups_y := int(ceil(grid_size.y / 8.0))
 
-	# 1. Force & Dye Splatting Pass (Applied ONCE per frame)
-	if _pending_splats.size() > 0:
-		for splat in _pending_splats:
-			var r := p_idx
-			var w := 1 - p_idx
-			var list := rd.compute_list_begin()
-			rd.compute_list_bind_compute_pipeline(list, pipe_splat)
-			rd.compute_list_bind_uniform_set(list, us_splat[r], 0)
+	var texel := PackedFloat32Array([1.0 / float(grid_size.x), 1.0 / float(grid_size.y)])
 
-			var pt: Vector2 = splat["point"]
-			var frc: Vector2 = splat["force"]
-			var col: Color = splat["color"]
-			var pc_splat := PackedFloat32Array([
-				pt.x, pt.y,
-				frc.x, frc.y,
-				col.r, col.g, col.b, col.a,
-				splat["radius"],
-				splat["strength"],
-				splat.get("mode", 0.0),
-				0.0
-			]).to_byte_array()
-			rd.compute_list_set_push_constant(list, pc_splat, pc_splat.size())
-			rd.compute_list_dispatch(list, groups_x, groups_y, 1)
-			rd.compute_list_end()
+	# Splats share one list with barriers between dependent dispatches.
+	var list := rd.compute_list_begin()
 
-			p_idx = w
-
+	# 1. Force & dye splats (applied once per frame)
+	for splat in _pending_splats:
+		var r := p_idx
+		var w := 1 - p_idx
+		rd.compute_list_bind_compute_pipeline(list, pipe_splat)
+		rd.compute_list_bind_uniform_set(list, us_splat[r], 0)
+		var pt: Vector2 = splat["point"]
+		var frc: Vector2 = splat["force"]
+		var col: Color = splat["color"]
+		var pc_splat := PackedFloat32Array([
+			pt.x, pt.y,
+			frc.x, frc.y,
+			col.r, col.g, col.b, col.a,
+			splat["radius"],
+			splat["strength"],
+			splat.get("mode", 0.0),
+			dye_gain
+		]).to_byte_array()
+		rd.compute_list_set_push_constant(list, pc_splat, pc_splat.size())
+		rd.compute_list_dispatch(list, groups_x, groups_y, 1)
+		rd.compute_list_add_barrier(list)
+		p_idx = w
 	_pending_splats.clear()
+	rd.compute_list_end()
 
-	# 2. Sub-stepped Navier-Stokes Simulation
+	# 2. Sub-stepped Navier-Stokes
+	var pc_advect := PackedFloat32Array([
+		texel[0], texel[1],
+		sub_dt,
+		dissipation,
+		dye_dissipation,
+		dye_floor,
+		0.0,
+		0.0
+	]).to_byte_array()
+	var pc_proj := PackedFloat32Array([
+		texel[0], texel[1],
+		vorticity,
+		surface_tension,
+		sub_dt
+	]).to_byte_array()
+
 	for s in range(sub_steps):
 		var r := p_idx
 		var w := 1 - p_idx
 
-		# 2a. Advection Pass
-		var list := rd.compute_list_begin()
+		# 2a. Advection runs in its own list: Godot 4.7 rejects the advect push
+		# constant when the advect pipeline shares a list with other
+		# push-constant pipelines. Seven lists per frame instead of ~70.
+		list = rd.compute_list_begin()
 		rd.compute_list_bind_compute_pipeline(list, pipe_advect)
 		rd.compute_list_bind_uniform_set(list, us_advect[r], 0)
-		var pc_advect := PackedFloat32Array([
-			1.0 / float(grid_size.x), 1.0 / float(grid_size.y),
-			sub_dt,
-			dissipation
-		]).to_byte_array()
 		rd.compute_list_set_push_constant(list, pc_advect, pc_advect.size())
 		rd.compute_list_dispatch(list, groups_x, groups_y, 1)
 		rd.compute_list_end()
+		list = rd.compute_list_begin()
 
 		p_idx = w
 		r = p_idx
 		w = 1 - p_idx
 
-		# 2b. Divergence Pass
-		list = rd.compute_list_begin()
+		# 2b. Divergence
 		rd.compute_list_bind_compute_pipeline(list, pipe_divergence)
 		rd.compute_list_bind_uniform_set(list, us_divergence[r], 0)
-		var pc_div := PackedFloat32Array([1.0 / float(grid_size.x), 1.0 / float(grid_size.y)]).to_byte_array()
-		rd.compute_list_set_push_constant(list, pc_div, pc_div.size())
 		rd.compute_list_dispatch(list, groups_x, groups_y, 1)
-		rd.compute_list_end()
+		rd.compute_list_add_barrier(list)
 
-		# 2c. Jacobi Pressure Solve (20 ping-pong iterations, ends on tex_pressure[0])
+		# 2c. Jacobi pressure solve (even count, ends on tex_pressure[0])
 		var p_read := 0
-		var p_write := 1
+		rd.compute_list_bind_compute_pipeline(list, pipe_pressure)
 		for j in range(jacobi_iterations):
-			list = rd.compute_list_begin()
-			rd.compute_list_bind_compute_pipeline(list, pipe_pressure)
 			rd.compute_list_bind_uniform_set(list, us_pressure[p_read], 0)
 			rd.compute_list_dispatch(list, groups_x, groups_y, 1)
-			rd.compute_list_end()
+			rd.compute_list_add_barrier(list)
 			p_read = 1 - p_read
-			p_write = 1 - p_write
 
-		# 2d. Projection & Vorticity Pass (reads converged tex_pressure[0])
-		list = rd.compute_list_begin()
+		# 2d. Projection + vorticity + surface tension
 		rd.compute_list_bind_compute_pipeline(list, pipe_project)
 		rd.compute_list_bind_uniform_set(list, us_project[r], 0)
-		var pc_proj := PackedFloat32Array([
-			1.0 / float(grid_size.x), 1.0 / float(grid_size.y),
-			vorticity,
-			surface_tension,
-			sub_dt
-		]).to_byte_array()
 		rd.compute_list_set_push_constant(list, pc_proj, pc_proj.size())
 		rd.compute_list_dispatch(list, groups_x, groups_y, 1)
 		rd.compute_list_end()
@@ -463,6 +491,8 @@ func step_simulation(delta: float) -> void:
 
 	if display_texture.texture_rd_rid != tex_dye[p_idx]:
 		display_texture.texture_rd_rid = tex_dye[p_idx]
+	if velocity_texture.texture_rd_rid != tex_velocity[p_idx]:
+		velocity_texture.texture_rd_rid = tex_velocity[p_idx]
 	step_completed.emit(frame_counter)
 
 func _step_cpu_fallback(_delta: float) -> void:
@@ -473,7 +503,7 @@ func _step_cpu_fallback(_delta: float) -> void:
 		var center := Vector2(splat["point"].x * w, splat["point"].y * h)
 		var r: float = splat["radius"] * w
 		var col: Color = splat["color"]
-		var frc: Vector2 = splat["force"] * 10.0
+		var frc: Vector2 = splat["force"] * 0.6
 		var r_int := int(ceil(r * 2.0))
 		var min_x := maxi(int(center.x - r_int), 0)
 		var max_x := mini(int(center.x + r_int), w - 1)
@@ -489,18 +519,19 @@ func _step_cpu_fallback(_delta: float) -> void:
 					var idx := y * w + x
 					_cpu_vel_x[idx] += frc.x * inf
 					_cpu_vel_y[idx] += frc.y * inf
-					_cpu_dye_r[idx] = clampf(_cpu_dye_r[idx] + col.r * inf * col.a, 0.0, 1.0)
-					_cpu_dye_g[idx] = clampf(_cpu_dye_g[idx] + col.g * inf * col.a, 0.0, 1.0)
-					_cpu_dye_b[idx] = clampf(_cpu_dye_b[idx] + col.b * inf * col.a, 0.0, 1.0)
+					_cpu_dye_r[idx] = clampf(_cpu_dye_r[idx] + col.r * inf * col.a * dye_gain, 0.0, 1.0)
+					_cpu_dye_g[idx] = clampf(_cpu_dye_g[idx] + col.g * inf * col.a * dye_gain, 0.0, 1.0)
+					_cpu_dye_b[idx] = clampf(_cpu_dye_b[idx] + col.b * inf * col.a * dye_gain, 0.0, 1.0)
 
 	for y in range(h):
 		for x in range(w):
 			var idx := y * w + x
-			_cpu_dye_r[idx] *= dissipation
-			_cpu_dye_g[idx] *= dissipation
-			_cpu_dye_b[idx] *= dissipation
-			_cpu_vel_x[idx] *= dissipation
-			_cpu_vel_y[idx] *= dissipation
+			_cpu_dye_r[idx] = maxf(_cpu_dye_r[idx] * dye_dissipation - dye_floor, 0.0)
+			_cpu_dye_g[idx] = maxf(_cpu_dye_g[idx] * dye_dissipation - dye_floor, 0.0)
+			_cpu_dye_b[idx] = maxf(_cpu_dye_b[idx] * dye_dissipation - dye_floor, 0.0)
+			# No projection on the CPU path, so decay velocity hard to stop runaway build-up.
+			_cpu_vel_x[idx] *= 0.96
+			_cpu_vel_y[idx] *= 0.96
 
 			var b_idx := idx * 4
 			_cpu_byte_buffer[b_idx + 0] = int(clampf(_cpu_dye_r[idx] * 255.0, 0.0, 255.0))
@@ -515,3 +546,13 @@ func get_display_texture() -> Texture2D:
 	if is_compute_ready and display_texture != null:
 		return display_texture
 	return _cpu_texture
+
+## Velocity field (RG32F) for velocity-aware display shading. Null on the CPU
+## fallback; the display shader defaults the sampler to black.
+func get_velocity_texture() -> Texture2D:
+	if is_compute_ready and velocity_texture != null:
+		return velocity_texture
+	return null
+
+func get_sim_texel_size() -> Vector2:
+	return Vector2(1.0 / float(grid_size.x), 1.0 / float(grid_size.y))

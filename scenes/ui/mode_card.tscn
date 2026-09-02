@@ -1,0 +1,114 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://src/ui/mode_card.gd" id="1_card_script"]
+[ext_resource type="Shader" path="res://shaders/vfx/frosted_glass.gdshader" id="2_glass_shader"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_glass"]
+shader = ExtResource("2_glass_shader")
+shader_parameter/blur_amount = 2.4
+shader_parameter/chromatic_dispersion = 0.003
+shader_parameter/glass_tint = Color(0.035, 0.015, 0.07, 0.82)
+shader_parameter/corner_radius = 0.04
+
+[node name="ModeCard" type="Control"]
+custom_minimum_size = Vector2(390, 400)
+layout_mode = 3
+anchors_preset = 0
+offset_right = 390.0
+offset_bottom = 400.0
+mouse_filter = 1
+script = ExtResource("1_card_script")
+
+[node name="Glass" type="ColorRect" parent="."]
+material = SubResource("ShaderMaterial_glass")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.05, 0.02, 0.1, 0.8)
+
+[node name="Panel" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Layout" type="VBoxContainer" parent="Panel"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="Icon" type="Label" parent="Panel/Layout"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 40
+text = "🚀"
+horizontal_alignment = 1
+
+[node name="CardTitle" type="Label" parent="Panel/Layout"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"H2"
+text = "MODE"
+horizontal_alignment = 1
+
+[node name="CardDesc" type="Label" parent="Panel/Layout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(320, 60)
+layout_mode = 2
+theme_type_variation = &"Small"
+text = "Description"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="Badge" type="Label" parent="Panel/Layout"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"Muted"
+text = "BADGE"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="DiffRow" type="HBoxContainer" parent="Panel/Layout"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="DiffLabel" type="Label" parent="Panel/Layout/DiffRow"]
+layout_mode = 2
+theme_type_variation = &"Muted"
+text = "DIFFICULTY"
+vertical_alignment = 1
+
+[node name="DiffOption" type="OptionButton" parent="Panel/Layout/DiffRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(170, 34)
+layout_mode = 2
+selected = 1
+item_count = 4
+popup/item_0/text = "Casual"
+popup/item_0/id = 0
+popup/item_1/text = "Balanced"
+popup/item_1/id = 1
+popup/item_2/text = "Veteran"
+popup/item_2/id = 2
+popup/item_3/text = "Chaos God"
+popup/item_3/id = 3
+
+[node name="PlayBtn" type="Button" parent="Panel/Layout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(270, 50)
+layout_mode = 2
+size_flags_horizontal = 4
+text = "PLAY"

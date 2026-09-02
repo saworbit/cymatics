@@ -11,7 +11,11 @@ layout(set = 0, binding = 3, rgba16f) uniform writeonly image2D dye_write;
 layout(push_constant, std430) uniform AdvectParams {
     vec2 texel_size;
     float dt;
-    float dissipation;
+    float dissipation;      // velocity decay per sub-step
+    float dye_dissipation;  // dye decay per sub-step (multiplicative)
+    float dye_floor;        // dye decay per sub-step (subtractive, clears haze)
+    float pad0;
+    float pad1;
 } params;
 
 vec2 sample_vel(ivec2 coord, ivec2 size) {
@@ -52,6 +56,8 @@ void main() {
     vec4 d11 = sample_dye(i + ivec2(1, 1), size);
     vec4 dye_new = mix(mix(d00, d10, f.x), mix(d01, d11, f.x), f.y);
 
+    dye_new = max(dye_new * params.dye_dissipation - vec4(params.dye_floor), vec4(0.0));
+
     imageStore(velocity_write, coord, vec4(vel_new * params.dissipation, 0.0, 0.0));
-    imageStore(dye_write, coord, dye_new * params.dissipation);
+    imageStore(dye_write, coord, dye_new);
 }

@@ -18,6 +18,7 @@ extends Node2D
 var chaos
 var brick_matrix: BrickMatrix
 var tournament_mgr: TournamentManager
+var time_ctrl: TimeController
 var paddle_ai_left: PaddleAI
 var lab_recorder: Node
 var _display_mat: ShaderMaterial
@@ -28,6 +29,13 @@ var _goal_glow_right: ColorRect
 
 func _ready() -> void:
 	LabMode.parse()
+	time_ctrl = TimeController.new()
+	time_ctrl.name = "TimeController"
+	add_child(time_ctrl)
+	move_child(time_ctrl, 0)
+	LabMode.time_ctrl = time_ctrl
+	vfx_mgr.time_ctrl = time_ctrl
+	game_mgr.time_ctrl = time_ctrl
 	vfx_mgr.camera = camera
 	camera.position = Vector2(960, 540)
 
@@ -43,6 +51,7 @@ func _ready() -> void:
 	chaos.name = "ChaosDirector"
 	add_child(chaos)
 	chaos.setup(self, ball, paddle_left, paddle_right, game_mgr, fluid_sim, vfx_mgr, audio_mgr)
+	chaos.time_ctrl = time_ctrl
 	game_mgr.chaos = chaos
 	paddle_ai.game_mgr = game_mgr
 	paddle_ai.chaos = chaos
@@ -61,6 +70,12 @@ func _ready() -> void:
 	game_mgr.tournament_mgr = tournament_mgr
 
 	hud.setup(game_mgr, paddle_left, paddle_right, tournament_mgr)
+	var reticle := ThreatReticle.new()
+	reticle.name = "ThreatReticle"
+	add_child(reticle)
+	reticle.setup(ball, game_mgr, paddle_left, paddle_right)
+	if audio_mgr != null and audio_mgr.has_method("bind_match"):
+		audio_mgr.bind_match(game_mgr, ball, paddle_left, paddle_right, tournament_mgr, chaos)
 
 	game_mgr.impact_pulse.connect(func(amt: float): _pulse = maxf(_pulse, amt))
 	game_mgr.serving_started.connect(func(_id: int): _lock_zoom = 0.0)
@@ -68,6 +83,8 @@ func _ready() -> void:
 
 	if fluid_display != null and fluid_display.material is ShaderMaterial:
 		_display_mat = fluid_display.material
+		if fluid_sim != null:
+			_display_mat.set_shader_parameter("sim_texel", fluid_sim.get_sim_texel_size())
 	_goal_glow_left = arena.get_node_or_null("GoalGlowLeft") as ColorRect
 	_goal_glow_right = arena.get_node_or_null("GoalGlowRight") as ColorRect
 	_update_display_texture()
@@ -83,7 +100,6 @@ func _physics_process(delta: float) -> void:
 		fluid_sim.step_simulation(delta)
 	if audio_mgr != null and fluid_sim != null:
 		audio_mgr.update_fluid_drone(fluid_sim.get_average_kinetic_energy())
-	_update_camera(delta)
 	_pulse = move_toward(_pulse, 0.0, delta * 1.8)
 	if _display_mat != null and ball != null and fluid_sim != null:
 		var heat := 0.0
@@ -95,9 +111,27 @@ func _physics_process(delta: float) -> void:
 		_display_mat.set_shader_parameter("heat", heat)
 		_display_mat.set_shader_parameter("flow_energy", fluid_sim.get_flow_energy_norm())
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_update_camera(delta)
 	_update_display_texture()
 	_update_goal_glows()
+	_update_ball_void(delta)
+
+var _void_strength := 0.0
+
+func _update_ball_void(delta: float) -> void:
+	if _display_mat == null or ball == null:
+		return
+	var live := game_mgr != null and game_mgr.current_state != GameManager.State.MENU and not ball.is_scored
+	var want := 1.0 if live else 0.0
+	_void_strength = move_toward(_void_strength, want, delta * 3.0)
+	var speed := ball.velocity.length()
+	var radius := 70.0 + clampf(speed / 2100.0, 0.0, 1.0) * 70.0
+	if ball.is_in_cymatic_lock:
+		radius += 30.0
+	_display_mat.set_shader_parameter("ball_uv", ball.global_position / Vector2(1920.0, 1080.0))
+	_display_mat.set_shader_parameter("void_radius_px", radius)
+	_display_mat.set_shader_parameter("void_strength", _void_strength)
 
 func _update_camera(delta: float) -> void:
 	if camera == null:
@@ -108,19 +142,30 @@ func _update_camera(delta: float) -> void:
 		return
 	if ball == null:
 		return
+	# Camera runs on real time so the goal slow-mo/freeze does not stall the push.
+	var real_dt := clampf(delta / maxf(Engine.time_scale, 0.0001), 0.0, 0.1)
+	if Engine.time_scale <= 0.0001:
+		real_dt = 1.0 / 60.0
 	var target := Vector2(960, 540)
 	if not ball.is_scored and not ball.is_serving:
 		target = target.lerp(ball.global_position, 0.045)
-	camera.position = camera.position.lerp(target, clampf(delta * 6.0, 0.0, 1.0))
+		# Subtle look-ahead toward where the ball is going.
+		target += (ball.velocity * 0.05).limit_length(60.0)
+	# Goal focus: push toward the goal line and zoom out briefly.
+	var focus_w := vfx_mgr.goal_focus_weight() if vfx_mgr else 0.0
+	if focus_w > 0.0:
+		target = target.lerp(vfx_mgr.goal_focus_pos(), focus_w * 0.08)
+	camera.position = camera.position.lerp(target, clampf(real_dt * 6.0, 0.0, 1.0))
 
 	var want_zoom := 0.0
 	if ball.is_in_cymatic_lock:
 		want_zoom = 0.12
 	elif ball.is_in_overdrive:
 		want_zoom = 0.06
-	_lock_zoom = lerpf(_lock_zoom, want_zoom, clampf(delta * 2.5, 0.0, 1.0))
+	_lock_zoom = lerpf(_lock_zoom, want_zoom, clampf(real_dt * 2.5, 0.0, 1.0))
 	var z := 1.0 + _lock_zoom + (vfx_mgr.get_zoom_punch() if vfx_mgr else 0.0)
-	camera.zoom = camera.zoom.lerp(Vector2(z, z), clampf(delta * 8.0, 0.0, 1.0))
+	z *= 1.0 - 0.07 * focus_w
+	camera.zoom = camera.zoom.lerp(Vector2(z, z), clampf(real_dt * 8.0, 0.0, 1.0))
 
 func _update_goal_glows() -> void:
 	if game_mgr != null and game_mgr.current_state == GameManager.State.MENU:
@@ -192,3 +237,7 @@ func _update_display_texture() -> void:
 		var tex := fluid_sim.get_display_texture()
 		if fluid_display.texture != tex:
 			fluid_display.texture = tex
+		if _display_mat != null and fluid_sim.has_method("get_velocity_texture"):
+			var vel_tex: Texture2D = fluid_sim.get_velocity_texture()
+			if vel_tex != null and _display_mat.get_shader_parameter("velocity_tex") != vel_tex:
+				_display_mat.set_shader_parameter("velocity_tex", vel_tex)

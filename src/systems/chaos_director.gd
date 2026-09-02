@@ -9,6 +9,7 @@ var fluid_sim: FluidSimulator
 var vfx_mgr: VFXManager
 var audio_mgr: AudioManager
 var game_mgr: GameManager
+var time_ctrl: TimeController
 var paddle_left: Paddle
 var paddle_right: Paddle
 var primary: Ball
@@ -17,7 +18,7 @@ var host: Node2D
 var extra_balls: Array[Ball] = []
 var live_powerup = null
 var _spawn_cd := 2.4
-var _hazard_cd := 5.0
+var _hazard_cd := 9.0
 var _hyper_time := 0.0
 
 func setup(p_host: Node2D, p_primary: Ball, p_p1: Paddle, p_p2: Paddle, p_gm: GameManager, p_fluid: FluidSimulator, p_vfx: VFXManager, p_audio: AudioManager) -> void:
@@ -37,7 +38,7 @@ func _physics_process(delta: float) -> void:
 	if _hyper_time > 0.0:
 		_hyper_time -= delta
 		if _hyper_time <= 0.0:
-			Engine.time_scale = 1.0
+			_end_hyper()
 	_prune_balls()
 	if game_mgr == null:
 		return
@@ -56,7 +57,14 @@ func _physics_process(delta: float) -> void:
 		_hazard_cd -= delta
 		if _hazard_cd <= 0.0:
 			_spawn_fluid_hazard()
-			_hazard_cd = randf_range(6.0, 9.5)
+			_hazard_cd = randf_range(12.0, 16.0)
+
+func _end_hyper() -> void:
+	_hyper_time = 0.0
+	if time_ctrl != null:
+		time_ctrl.pop(&"hyper")
+	elif Engine.time_scale > 1.0:
+		Engine.time_scale = 1.0
 
 func _spawn_fluid_hazard() -> void:
 	if fluid_sim == null:
@@ -72,7 +80,7 @@ func _spawn_fluid_hazard() -> void:
 			vfx_mgr.spawn_shockwave(vpos, col, 320.0, 0.5)
 			vfx_mgr.spawn_hit_burst(vpos, col, 1.4)
 		if game_mgr != null:
-			game_mgr.callout.emit("VORTEX", col)
+			game_mgr.post_callout("VORTEX", col, GameManager.PRIO_LOW)
 		if audio_mgr != null:
 			audio_mgr.trigger_sting(340.0, 0.35)
 	else:
@@ -84,7 +92,7 @@ func _spawn_fluid_hazard() -> void:
 		if vfx_mgr != null:
 			vfx_mgr.spawn_shockwave(cpos, col, 280.0, 0.4)
 		if game_mgr != null:
-			game_mgr.callout.emit("CURRENT", col)
+			game_mgr.post_callout("CURRENT", col, GameManager.PRIO_LOW)
 		if audio_mgr != null:
 			audio_mgr.trigger_sting(480.0, 0.3)
 
@@ -141,13 +149,12 @@ func _on_powerup_collected(kind: int, hitter_id: int, ball: Ball) -> void:
 	var label = PowerupScript.LABELS.get(kind, "POWER")
 	var color: Color = PowerupScript.COLORS.get(kind, Color.WHITE)
 	if game_mgr != null:
-		game_mgr.callout.emit(str(label) + "!", color)
+		game_mgr.post_callout(str(label) + "!", color, GameManager.PRIO_NORMAL)
 	if audio_mgr != null:
 		audio_mgr.trigger_sting(660.0, 0.45)
 	if vfx_mgr != null:
 		var burst_pos := ball.global_position if (ball != null and is_instance_valid(ball)) else (self_p.global_position if self_p != null else Vector2(960, 540))
 		vfx_mgr.spawn_shockwave(burst_pos, color, 420.0, 0.35)
-		vfx_mgr.flash_screen(color, 0.16, 0.12)
 
 	match kind:
 		PowerupScript.Kind.MULTIBALL:
@@ -176,7 +183,10 @@ func _on_powerup_collected(kind: int, hitter_id: int, ball: Ball) -> void:
 					extra.ignite_fireball(8.0)
 		PowerupScript.Kind.HYPER:
 			_hyper_time = 4.0
-			Engine.time_scale = 1.18
+			if time_ctrl != null:
+				time_ctrl.push(&"hyper", 1.18, TimeController.PRIO_HYPER)
+			else:
+				Engine.time_scale = 1.18
 			if self_p:
 				self_p.apply_size_mod(1.2, 4.0)
 			var tb: Ball = ball if ball != null else primary
@@ -231,7 +241,7 @@ func _split_multiball(source: Ball) -> void:
 		var clone: Ball = ball_scene.instantiate()
 		clone.is_clone = true
 		host.add_child(clone)
-		clone.setup_dependencies(fluid_sim, vfx_mgr, audio_mgr)
+		clone.setup_dependencies(fluid_sim, vfx_mgr, audio_mgr, game_mgr)
 		clone.set_paddles(paddle_left, paddle_right)
 		var spread := Vector2(source.velocity.x, source.velocity.y + (i * 2 - 1) * 420.0)
 		if spread.length() < 200.0:
@@ -246,14 +256,14 @@ func _split_multiball(source: Ball) -> void:
 		clone.goal_reached.connect(_on_clone_goal)
 		clone.hit_paddle.connect(func(p: Paddle, spd: float, perf: bool):
 			if game_mgr != null:
-				game_mgr._on_ball_hit_paddle(p, spd, perf)
+				game_mgr.on_ball_hit_paddle(p, spd, perf)
 		)
 		extra_balls.append(clone)
 	multiball_started.emit(extra_balls.size() + 1)
 	if source:
 		source.emote(2, 1.0, "FRIENDS")
 	if game_mgr != null:
-		game_mgr.callout.emit("MULTIBALL x%d" % (extra_balls.size() + 1), Color(1.0, 0.9, 0.3))
+		game_mgr.post_callout("MULTIBALL x%d" % (extra_balls.size() + 1), Color(1.0, 0.9, 0.3), GameManager.PRIO_HIGH)
 	if vfx_mgr != null:
 		vfx_mgr.apply_camera_kick(Vector2.UP, 1.1)
 		vfx_mgr.spawn_hit_burst(source.global_position, Color(1.0, 0.92, 0.3), 2.6)
@@ -299,7 +309,8 @@ func threat_ball_for(p: Paddle) -> Ball:
 			best = b
 	return best
 
-func clear_point() -> void:
+## Point reset: clones, orbs, hyper, and powerup-granted paddle mods. Stage loadouts survive.
+func clear_rally_mods() -> void:
 	if live_powerup != null and is_instance_valid(live_powerup):
 		live_powerup.set_deferred("monitoring", false)
 		live_powerup.queue_free()
@@ -311,12 +322,23 @@ func clear_point() -> void:
 			b.queue_free()
 	extra_balls.clear()
 	_spawn_cd = 2.8
-	_hyper_time = 0.0
-	if Engine.time_scale > 1.0:
-		Engine.time_scale = 1.0
+	_end_hyper()
 	if primary != null:
 		primary.fireball_time = 0.0
+		primary.speed_override_time = 0.0
 	if paddle_left:
-		paddle_left.clear_mods()
+		paddle_left.clear_rally_mods()
 	if paddle_right:
-		paddle_right.clear_mods()
+		paddle_right.clear_rally_mods()
+
+## Stage reset: boss shape/size loadouts. Called on stop_tournament / menu / non-gauntlet restart.
+func clear_stage_mods() -> void:
+	if paddle_left:
+		paddle_left.clear_stage_mods()
+	if paddle_right:
+		paddle_right.clear_stage_mods()
+
+## Legacy alias: full reset.
+func clear_point() -> void:
+	clear_rally_mods()
+	clear_stage_mods()

@@ -10,6 +10,7 @@ static var matches := 2
 static var seconds := 0.0
 static var time_scale := 4.0
 static var quiet := false
+static var time_ctrl: TimeController = null
 
 static func parse() -> void:
 	if parsed:
@@ -34,8 +35,14 @@ static func parse() -> void:
 
 static func apply_clock() -> void:
 	if not active:
+		if time_ctrl != null:
+			time_ctrl.pop(&"lab")
 		return
-	Engine.time_scale = 1.0 if watch else time_scale
+	var s := 1.0 if watch else time_scale
+	if time_ctrl != null:
+		time_ctrl.push(&"lab", s, TimeController.PRIO_LAB)
+	else:
+		Engine.time_scale = s
 
 static func enable_watch() -> void:
 	active = true
