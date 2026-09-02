@@ -80,8 +80,13 @@ var time_ctrl: TimeController
 var chaos
 var tournament_mgr: TournamentManager
 
+var _settings_node: Node
+
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	var st := _settings()
+	if st != null and not st.is_connected("changed", _on_setting_changed):
+		st.connect("changed", _on_setting_changed)
 	_serve_timer = Timer.new()
 	_serve_timer.name = "ServeTimer"
 	_serve_timer.one_shot = true
@@ -91,6 +96,86 @@ func _ready() -> void:
 	add_child(_serve_timer)
 	_serve_timer.timeout.connect(_on_serve_timer)
 
+# --- Team colour (accessibility) ----------------------------------------------
+
+## Settings autoload looked up by path so `--check-only` still compiles.
+func _settings() -> Node:
+	if _settings_node == null or not is_instance_valid(_settings_node):
+		_settings_node = get_node_or_null("/root/Settings")
+	return _settings_node
+
+## Single source of truth for team colour, honouring `colorblind_mode`.
+## `player_id` 0 = left / Padd, 1 = right / Lin.
+func team_color(player_id: int) -> Color:
+	var st := _settings()
+	if st != null and st.has_method("team_color"):
+		return st.call("team_color", player_id)
+	return Color(0.0, 0.898, 1.0) if player_id == 0 else Color(1.0, 0.0, 0.667)
+
+## Colour of whoever just scored. `scorer_id` follows `goal_reached`:
+## 1 means the left paddle (player 0) scored.
+func _scorer_color(scorer_id: int) -> Color:
+	return team_color(0 if scorer_id == 1 else 1)
+
+func _on_setting_changed(key: String, _value: Variant) -> void:
+	if key != "colorblind_mode":
+		return
+	_apply_team_colors()
+
+## Team-coloured shader uniforms a paddle builds in `_setup_visuals()`.
+const TEAM_SHADER_PARAMS := ["glow_color", "beam_color", "vortex_tint", "team_color"]
+
+## Repaint both paddles from the current palette. Boss stages override the right
+## paddle's colour on their own; this only runs on palette changes and match start.
+func _apply_team_colors() -> void:
+	_repaint_paddle(paddle_left, team_color(0))
+	if not is_gauntlet_mode:
+		_repaint_paddle(paddle_right, team_color(1))
+	_apply_goal_wall_colors()
+
+## The two `GoalWall` membranes live in arena.tscn with an exported team colour
+## baked into their shader on `_ready`. Repaint them from here so the goal a
+## player defends keeps their colour under every palette. Left wall is player 0.
+func _apply_goal_wall_colors() -> void:
+	for wall in _find_goal_walls(get_parent()):
+		var col := team_color(0 if int(wall.get("side")) == 0 else 1)
+		wall.set("team_color", col)
+		_retint_shader_materials(wall, col)
+
+func _find_goal_walls(n: Node, found: Array[Node] = []) -> Array[Node]:
+	if n == null:
+		return found
+	if n is GoalWall:
+		found.append(n)
+	for c in n.get_children():
+		_find_goal_walls(c, found)
+	return found
+
+## `Paddle.team_color` is a plain export with no setter, and the body / beam /
+## vortex materials bake it once in `_setup_visuals()`. Until Paddle grows a
+## setter, push the new colour into those uniforms from here so a palette change
+## reaches the paddle art and not just the HUD.
+func _repaint_paddle(p: Paddle, col: Color) -> void:
+	if p == null or not is_instance_valid(p):
+		return
+	p.team_color = col
+	if p.has_method("apply_team_color"):
+		p.call("apply_team_color", col)
+		return
+	_retint_shader_materials(p, col)
+
+func _retint_shader_materials(n: Node, col: Color) -> void:
+	var ci := n as CanvasItem
+	if ci != null and ci.material is ShaderMaterial:
+		var sm: ShaderMaterial = ci.material
+		if sm.shader != null:
+			for u in sm.shader.get_shader_uniform_list():
+				var uname := String(u.get("name", ""))
+				if uname in TEAM_SHADER_PARAMS:
+					sm.set_shader_parameter(uname, col)
+	for c in n.get_children():
+		_retint_shader_materials(c, col)
+
 func setup_references(p_ball: Ball, p_p1: Paddle, p_p2: Paddle, p_ai: PaddleAI, p_vfx: VFXManager, p_audio: AudioManager) -> void:
 	ball = p_ball
 	paddle_left = p_p1
@@ -98,6 +183,10 @@ func setup_references(p_ball: Ball, p_p1: Paddle, p_p2: Paddle, p_ai: PaddleAI, 
 	paddle_ai = p_ai
 	vfx_mgr = p_vfx
 	audio_mgr = p_audio
+
+	_apply_team_colors()
+	if vfx_mgr != null and vfx_mgr.haptics != null:
+		vfx_mgr.haptics.bind_match(paddle_left, paddle_right, ball, self)
 
 	ball.goal_reached.connect(_on_goal_reached)
 	ball.hit_paddle.connect(on_ball_hit_paddle)
@@ -369,7 +458,7 @@ func _on_goal_reached(scorer_id: int) -> void:
 	var goal_hit_pos := ball.global_position if ball != null else Vector2(1920 if scorer_id == 1 else 0, 540)
 	goal_theatre_started.emit(goal_side, goal_hit_pos)
 	if vfx_mgr != null:
-		var col := Color(0.0, 0.9, 1.0) if scorer_id == 1 else Color(1.0, 0.0, 0.67)
+		var col := _scorer_color(scorer_id)
 		vfx_mgr.play_goal_theatre(ball, goal_side, col)
 		vfx_mgr.apply_camera_kick(Vector2.RIGHT if scorer_id == 1 else Vector2.LEFT, 1.8)
 
@@ -388,7 +477,7 @@ func _on_goal_reached(scorer_id: int) -> void:
 	elif is_smash:
 		_banner("THAT'S A PADDLIN'!", Color(1.0, 0.85, 0.25), PRIO_HIGH)
 	else:
-		_banner("THAT'S A PADDLIN'!", Color(0.0, 0.9, 1.0) if scorer_id == 1 else Color(1.0, 0.0, 0.67), PRIO_HIGH)
+		_banner("THAT'S A PADDLIN'!", _scorer_color(scorer_id), PRIO_HIGH)
 
 	score_updated.emit(score_p1, score_p2)
 
@@ -502,7 +591,7 @@ func on_clone_goal(scorer_id: int) -> void:
 	_banner("MULTI GOAL", Color(1.0, 0.85, 0.2), PRIO_NORMAL)
 	score_updated.emit(score_p1, score_p2)
 	if vfx_mgr != null:
-		var col := Color(0.0, 0.9, 1.0) if scorer_id == 1 else Color(1.0, 0.0, 0.67)
+		var col := _scorer_color(scorer_id)
 		vfx_mgr.spawn_shockwave(Vector2(1920 if scorer_id == 1 else 0, 540), col, 520.0, 0.4)
 		vfx_mgr.apply_camera_kick(Vector2.RIGHT if scorer_id == 1 else Vector2.LEFT, 1.1)
 	if audio_mgr != null:
@@ -526,6 +615,7 @@ func on_clone_goal(scorer_id: int) -> void:
 
 func restart_match() -> void:
 	_cancel_serve()
+	_apply_team_colors()
 	var tree := get_tree()
 	if tree != null and tree.paused:
 		tree.paused = false
@@ -589,10 +679,11 @@ func start_arcade_match(difficulty_mult: float = 1.0) -> void:
 		paddle_ai.difficulty = difficulty_mult
 	if paddle_right != null:
 		paddle_right.is_ai = true
-		paddle_right.team_color = Color(1.0, 0.0, 0.67)
+		paddle_right.team_color = team_color(1)
 		paddle_right.mutate_shape(Paddle.Shape.STANDARD, 0.0)
 	if paddle_left != null:
 		paddle_left.is_ai = false
+		paddle_left.team_color = team_color(0)
 		paddle_left.mutate_shape(Paddle.Shape.STANDARD, 0.0)
 	ai_toggled.emit(true)
 	gauntlet_mode_toggled.emit(false)
@@ -606,6 +697,7 @@ func start_gauntlet_match() -> void:
 	is_zen_mode = false
 	if paddle_left != null:
 		paddle_left.is_ai = false
+		paddle_left.team_color = team_color(0)
 		paddle_left.mutate_shape(Paddle.Shape.STANDARD, 0.0)
 	if paddle_right != null:
 		paddle_right.is_ai = true
@@ -627,10 +719,11 @@ func start_pvp_match() -> void:
 		paddle_ai.enabled = false
 	if paddle_right != null:
 		paddle_right.is_ai = false
-		paddle_right.team_color = Color(1.0, 0.0, 0.67)
+		paddle_right.team_color = team_color(1)
 		paddle_right.mutate_shape(Paddle.Shape.STANDARD, 0.0)
 	if paddle_left != null:
 		paddle_left.is_ai = false
+		paddle_left.team_color = team_color(0)
 		paddle_left.mutate_shape(Paddle.Shape.STANDARD, 0.0)
 	ai_toggled.emit(false)
 	gauntlet_mode_toggled.emit(false)

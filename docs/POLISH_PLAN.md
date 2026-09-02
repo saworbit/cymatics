@@ -120,11 +120,92 @@ Known follow-ups from this pass: `p1_super`/`p2_super` both bind physical Shift 
 
 ## Phase 3: structure
 
-- `MatchState` owner (scores, rally, server, live checks).
+- `MatchState` owner (scores, rally, server, live checks). Deferred: it is a
+  pure refactor of working code, so the regression risk outweighs the benefit
+  until something else forces it.
 - Split Ball/Paddle into body + view; `PaddleIntent` input abstraction.
-- Tuning resources (`BallTuning.tres`, `PaddleTuning.tres`).
-- Fluid (partly landed 2026-09-02): compute lists merged from ~70 to 7 per
-  frame (Godot 4.7 rejects the advect push constant when it shares a list
-  with other push-constant pipelines, so advect runs alone), pressure and
+  Deferred for the same reason; maintainability only, no player-visible gain.
+
+### Audio generation (fixed 2026-09-02)
+
+`patch_import` only edited an existing `.import`, so the first import on a
+fresh clone or in CI applied Godot's default QOA compression. That made the
+three music stems different lengths, failed the sample-identical check and
+silently disabled the synth soundtrack. The generators now write a complete
+`.import` when none exists, pinning PCM and forward looping.
+- [x] Tuning resources: `BallTuning` (174 exports), `PaddleTuning` (201) and
+  `AITuning` (148) under `src/tuning/`, with default `.tres` instances that
+  reproduce the previous behaviour exactly. Feel is now data, editable in the
+  inspector without touching code.
+- Fluid (landed 2026-09-02): compute lists merged from ~70 to 7 per frame
+  (Godot 4.7 rejects the advect push constant when it shares a list with
+  other push-constant pipelines, so advect runs alone), pressure and
   divergence are R32F, velocity-driven aberration and schlieren shading are
-  in. Still open: bounded splat dispatch, mipmaps, grid presets.
+  in, splats run in place with a dispatch bounded to their radius, and
+  quality presets (Low 128x72 / Medium 256x144 / High 384x216 / Ultra
+  512x288) rebuild the grid live from the `fluid_quality` setting.
+  Still open: dye mipmaps.
+
+### Performance (measured 2026-09-02)
+
+`tools/perf_run.gd` reports wall-clock frame-time percentiles per phase with
+vsync and the FPS cap forced off. Re-run it after any rendering change.
+
+On an RTX 3070 Ti at 1920x1080: menu 1.6 ms mean / 2.0 ms p95, rally 1.25 ms
+mean / 1.8 ms p95, about 60 draw calls. Ultra costs the same as Medium, so
+the fluid is not the bottleneck and the presets exist to scale *down* for
+weak hardware. There is roughly 14 ms of headroom at 60 fps. Untested on
+integrated graphics and handhelds; that is the real risk, not the desktop.
+
+Two resolution bugs found and fixed while adding the presets:
+
+- The display Sprite2D had a hard-coded 7.5x scale sized for a 256-wide
+  texture, so any other grid covered the wrong screen area. `Main` now
+  derives the scale from `grid_size`.
+- Newly created RD textures are not zeroed. Uninitialised velocity made
+  advection backtrace from garbage and wiped the dye, which looked like an
+  empty field whenever the grid grew. All sim textures are now cleared on
+  creation.
+
+## Phase 3: accessibility and haptics (landed 2026-09-03)
+
+New `Settings` keys and defaults: `colorblind_mode` 0 (Off / Deuteranopia /
+Protanopia / Tritanopia), `ui_scale` 1.0 (0.8 / 1.0 / 1.25 / 1.5),
+`screen_shake` 1.0, `haptics` true, `haptics_strength` 0.8.
+
+- [x] Gamepad haptics (`src/systems/haptics.gd`, a GDD pillar that was never
+      implemented). Owned and instantiated by `VFXManager`; `GameManager`
+      binds it to the live match in `setup_references`, so no actor file
+      changed. Device 0 = player 0, device 1 = player 1; AI paddles never
+      rumble and nothing fires while paused or in the menu. Events: paddle hit,
+      perfect parry (double crack), blast charge (rising hold), blast release
+      (scaled by power), suck capture (held hum), slingshot, wall bounce, goal
+      (strong for the conceder, three-beat cheer for the scorer), stun,
+      resonance, Cymatic Lock heartbeat, match win. Run with `--haptics-debug`
+      in the user args to log every call.
+- [x] Colourblind palettes. `Settings.team_color(player_id)` is the single
+      source of truth, with `remap_team_color()` for hard-coded call sites.
+      Applied to the HUD scores / labels / momentum fills / comet shaders,
+      callout colours, goal theatre and clone-goal colours, paddle
+      `team_color`, the mode-card accents and mascot plates, and new
+      `TeamP1` / `TeamP2` theme tokens.
+- [x] UI scale. `UIScaleRoot` (`src/systems/ui_scale_root.gd`) reparents a UI
+      CanvasLayer's children under a Control sized to `viewport / scale`, so
+      anchors resolve in a smaller virtual canvas and the layer fills the
+      screen at any scale. Installed by `HUD._ready` and `MenuManager._ready`.
+      The settings modal is anchor-proportional with a `ScrollContainer` so it
+      still fits at 150 %.
+- [x] Motion and photosensitivity. `VFXManager.shake_scale` (new
+      `screen_shake` slider) multiplies shake, kick and zoom punch, and
+      `reduce_motion` halves it again; hit-stop is halved and pulled toward
+      normal speed; the goal camera push is halved (the slow-motion beat
+      stays, so goals still read); `flash_screen` softens to a longer, dimmer
+      wash instead of dropping out, and a rolling cap of 3 full-screen flashes
+      per second stops a brick volley from strobing.
+- [x] Settings modal gained an ACCESSIBILITY section (colourblind mode, UI
+      scale, screen shake, reduce motion, screen flash, gamepad rumble, rumble
+      strength), keyboard and pad navigable like the rest.
+
+Not rerouted through `Settings.team_color` (other owners): `Ball` wake and
+trail colours, the fluid display and goal-wall shaders' palettes,
+`ArenaAmbience`, and `TournamentManager.STAGES` boss colours.

@@ -3,10 +3,11 @@
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(set = 0, binding = 0, rg32f) uniform readonly image2D velocity_read;
-layout(set = 0, binding = 1, rg32f) uniform writeonly image2D velocity_write;
-layout(set = 0, binding = 2, rgba16f) uniform readonly image2D dye_read;
-layout(set = 0, binding = 3, rgba16f) uniform writeonly image2D dye_write;
+// Splats touch only their own texel, so velocity and dye are read-write in
+// place. That removes the per-splat ping-pong copy of the whole grid and lets
+// the dispatch be bounded to the splat's radius.
+layout(set = 0, binding = 0, rg32f) uniform image2D velocity;
+layout(set = 0, binding = 1, rgba16f) uniform image2D dye;
 
 layout(push_constant, std430) uniform SplatParams {
     vec2 point;
@@ -16,14 +17,16 @@ layout(push_constant, std430) uniform SplatParams {
     float strength;
     float mode;      // 0 = jet, 1 = vortex, 2 = sink
     float dye_gain;  // global multiplier on dye deposition
+    ivec2 origin;    // texel offset of this bounded dispatch
+    ivec2 pad;
 } splat;
 
 const float DYE_CAP = 1.6;
 
 void main() {
-    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
-    ivec2 size = imageSize(velocity_read);
-    if (any(greaterThanEqual(coord, size))) return;
+    ivec2 coord = splat.origin + ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(velocity);
+    if (any(greaterThanEqual(coord, size)) || any(lessThan(coord, ivec2(0)))) return;
 
     vec2 cell_pos = vec2(coord) + 0.5;
     vec2 splat_pos = splat.point * vec2(size);
@@ -34,7 +37,7 @@ void main() {
     float rad_sq = rad * rad;
     float influence = exp(-dist_sq / rad_sq) * splat.strength;
 
-    vec2 vel = imageLoad(velocity_read, coord).xy;
+    vec2 vel = imageLoad(velocity, coord).xy;
     float mode = splat.mode;
     if (mode < 0.5) {
         vel += splat.force * influence;
@@ -51,15 +54,15 @@ void main() {
             vel += inward * splat.force.x * influence;
         }
     }
-    imageStore(velocity_write, coord, vec4(vel, 0.0, 0.0));
+    imageStore(velocity, coord, vec4(vel, 0.0, 0.0));
 
     // Dye deposition: alpha is an opacity weight, and a global gain keeps the
     // field from saturating when several emitters run every frame. The cap is
     // soft so bright cores compress instead of flat-topping to white.
-    vec4 dye = imageLoad(dye_read, coord);
+    vec4 d = imageLoad(dye, coord);
     float deposit = influence * splat.color.a * splat.dye_gain;
-    dye.rgb += splat.color.rgb * deposit;
-    dye.rgb = dye.rgb / (1.0 + max(dye.rgb - DYE_CAP, vec3(0.0)) * 0.5);
-    dye.a = min(dye.a + splat.color.a * influence, 1.0);
-    imageStore(dye_write, coord, dye);
+    d.rgb += splat.color.rgb * deposit;
+    d.rgb = d.rgb / (1.0 + max(d.rgb - DYE_CAP, vec3(0.0)) * 0.5);
+    d.a = min(d.a + splat.color.a * influence, 1.0);
+    imageStore(dye, coord, d);
 }

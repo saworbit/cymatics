@@ -14,8 +14,10 @@ layout(push_constant, std430) uniform AdvectParams {
     float dissipation;      // velocity decay per sub-step
     float dye_dissipation;  // dye decay per sub-step (multiplicative)
     float dye_floor;        // dye decay per sub-step (subtractive, clears haze)
-    float pad0;
-    float pad1;
+    // Velocity is stored in texels/second of a fixed 256x144 reference grid,
+    // so the same force covers the same screen distance at every quality
+    // preset. Without this the field destabilises as the grid grows.
+    vec2 vel_to_uv;
 } params;
 
 vec2 sample_vel(ivec2 coord, ivec2 size) {
@@ -37,7 +39,7 @@ void main() {
     vec2 vel = sample_vel(coord, size);
 
     // Semi-Lagrangian backtracing
-    vec2 prev_uv = uv - vel * params.dt * params.texel_size;
+    vec2 prev_uv = uv - vel * params.dt * params.vel_to_uv;
     vec2 prev_coord = prev_uv / params.texel_size - 0.5;
     ivec2 i = ivec2(floor(prev_coord));
     vec2 f = fract(prev_coord);

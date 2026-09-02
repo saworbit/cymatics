@@ -6,6 +6,23 @@ extends Node
 ## Provides real-time continuous hydrodynamic force & curl coupling for ball flight and paddle combat.
 
 signal step_completed(frame_index: int)
+## Emitted when the grid is rebuilt at a new resolution, so the display shader
+## can be told its new texel size.
+signal grid_changed(texel_size: Vector2)
+
+## Simulation resolution presets. The sim is cheap relative to the rest of the
+## frame on a discrete GPU, but it scales with area, so Ultra is 4x Medium.
+## Velocity is expressed in texels/second of this reference grid, so the sim
+## behaves identically at every quality preset.
+const REF_TEXEL := Vector2(1.0 / 256.0, 1.0 / 144.0)
+
+enum Quality { LOW, MEDIUM, HIGH, ULTRA }
+const QUALITY_GRIDS := {
+	Quality.LOW: Vector2i(128, 72),
+	Quality.MEDIUM: Vector2i(256, 144),
+	Quality.HIGH: Vector2i(384, 216),
+	Quality.ULTRA: Vector2i(512, 288),
+}
 
 @export var grid_size := Vector2i(256, 144)
 ## Must be even: the ping-pong solve has to end on tex_pressure[0].
@@ -77,8 +94,63 @@ var _cpu_byte_buffer: PackedByteArray
 var _cpu_image: Image
 var _cpu_texture: ImageTexture
 
+var _quality: Quality = Quality.MEDIUM
+
 func _ready() -> void:
+	var settings := get_node_or_null(^"/root/Settings")
+	if settings != null and settings.has_method("get_value"):
+		_quality = int(settings.call("get_value", "fluid_quality", Quality.MEDIUM)) as Quality
+		if settings.has_signal("changed"):
+			settings.connect("changed", _on_setting_changed)
+	grid_size = QUALITY_GRIDS.get(_quality, Vector2i(256, 144))
 	_init_simulation()
+
+func _on_setting_changed(key: String, value) -> void:
+	if key == "fluid_quality":
+		set_quality(int(value) as Quality)
+
+func get_quality() -> Quality:
+	return _quality
+
+## Rebuild the simulation at a new resolution. Frees every RID and re-inits,
+## so the dye currently on screen is lost; call it between points if that
+## matters. Safe to call with the same preset (no-op).
+func set_quality(preset: Quality) -> void:
+	var grid: Vector2i = QUALITY_GRIDS.get(preset, Vector2i(256, 144))
+	if preset == _quality and grid == grid_size:
+		return
+	_quality = preset
+	if not is_compute_ready:
+		grid_size = grid
+		return
+
+	# Detach the wrappers before the RIDs they point at are freed.
+	if display_texture != null:
+		display_texture.texture_rd_rid = RID()
+	if velocity_texture != null:
+		velocity_texture.texture_rd_rid = RID()
+	_cleanup_rids()
+
+	tex_velocity.clear()
+	tex_dye.clear()
+	tex_pressure.clear()
+	tex_divergence = RID()
+	us_advect.clear()
+	us_splat.clear()
+	us_divergence.clear()
+	us_pressure.clear()
+	us_project.clear()
+	_pending_splats.clear()
+	p_idx = 0
+	is_compute_ready = false
+
+	grid_size = grid
+	if _init_compute_pipeline():
+		is_compute_ready = true
+		grid_changed.emit(get_sim_texel_size())
+	else:
+		push_warning("[FluidSimulator] Rebuild at %s failed; falling back to CPU." % grid)
+		_init_cpu_fallback()
 
 func _exit_tree() -> void:
 	# Detach the Texture2DRD wrappers first so materials stop referencing RIDs
@@ -107,20 +179,20 @@ func _init_compute_pipeline() -> bool:
 	format_vel.format = RenderingDevice.DATA_FORMAT_R32G32_SFLOAT
 	format_vel.width = grid_size.x
 	format_vel.height = grid_size.y
-	format_vel.usage_bits = RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
+	format_vel.usage_bits = RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT
 
 	var format_dye := RDTextureFormat.new()
 	format_dye.format = RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT
 	format_dye.width = grid_size.x
 	format_dye.height = grid_size.y
-	format_dye.usage_bits = RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
+	format_dye.usage_bits = RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT
 
 	# Pressure and divergence are scalar fields; R32F halves their bandwidth.
 	var format_scalar := RDTextureFormat.new()
 	format_scalar.format = RenderingDevice.DATA_FORMAT_R32_SFLOAT
 	format_scalar.width = grid_size.x
 	format_scalar.height = grid_size.y
-	format_scalar.usage_bits = RenderingDevice.TEXTURE_USAGE_STORAGE_BIT
+	format_scalar.usage_bits = RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT
 
 	var view := RDTextureView.new()
 
@@ -137,6 +209,16 @@ func _init_compute_pipeline() -> bool:
 	tex_divergence = rd.texture_create(format_scalar, view)
 	if not tex_divergence.is_valid():
 		return false
+
+	# Freshly created textures are not guaranteed to be zeroed. Uninitialised
+	# velocity makes advection backtrace from garbage and wipes the dye, which
+	# showed up as an empty field whenever the grid grew.
+	var clear := Color(0.0, 0.0, 0.0, 0.0)
+	for i in range(2):
+		rd.texture_clear(tex_velocity[i], clear, 0, 1, 0, 1)
+		rd.texture_clear(tex_dye[i], clear, 0, 1, 0, 1)
+		rd.texture_clear(tex_pressure[i], clear, 0, 1, 0, 1)
+	rd.texture_clear(tex_divergence, clear, 0, 1, 0, 1)
 
 	shader_advect = _load_compute_shader("res://shaders/compute/cymatics_advect.glsl")
 	shader_splat = _load_compute_shader("res://shaders/compute/cymatics_splat.glsl")
@@ -156,7 +238,7 @@ func _init_compute_pipeline() -> bool:
 	for r in range(2):
 		var w := 1 - r
 		us_advect.append(_create_uniform_set(shader_advect, [tex_velocity[r], tex_dye[r], tex_velocity[w], tex_dye[w]]))
-		us_splat.append(_create_uniform_set(shader_splat, [tex_velocity[r], tex_velocity[w], tex_dye[r], tex_dye[w]]))
+		us_splat.append(_create_uniform_set(shader_splat, [tex_velocity[r], tex_dye[r]]))
 		us_divergence.append(_create_uniform_set(shader_divergence, [tex_velocity[r], tex_divergence]))
 		us_pressure.append(_create_uniform_set(shader_pressure, [tex_pressure[r], tex_pressure[w], tex_divergence]))
 		# Jacobi iteration 19 always outputs converged pressure to tex_pressure[0]
@@ -401,33 +483,51 @@ func step_simulation(delta: float) -> void:
 
 	var texel := PackedFloat32Array([1.0 / float(grid_size.x), 1.0 / float(grid_size.y)])
 
-	# Splats share one list with barriers between dependent dispatches.
-	var list := rd.compute_list_begin()
-
-	# 1. Force & dye splats (applied once per frame)
-	for splat in _pending_splats:
-		var r := p_idx
-		var w := 1 - p_idx
+	# 1. Force & dye splats, applied once per frame. Each splat only touches its
+	# own texel, so they run in place on the current parity and the dispatch is
+	# bounded to the affected region instead of the whole grid.
+	var list := -1
+	if not _pending_splats.is_empty():
+		list = rd.compute_list_begin()
 		rd.compute_list_bind_compute_pipeline(list, pipe_splat)
-		rd.compute_list_bind_uniform_set(list, us_splat[r], 0)
-		var pt: Vector2 = splat["point"]
-		var frc: Vector2 = splat["force"]
-		var col: Color = splat["color"]
-		var pc_splat := PackedFloat32Array([
-			pt.x, pt.y,
-			frc.x, frc.y,
-			col.r, col.g, col.b, col.a,
-			splat["radius"],
-			splat["strength"],
-			splat.get("mode", 0.0),
-			dye_gain
-		]).to_byte_array()
-		rd.compute_list_set_push_constant(list, pc_splat, pc_splat.size())
-		rd.compute_list_dispatch(list, groups_x, groups_y, 1)
-		rd.compute_list_add_barrier(list)
-		p_idx = w
+		rd.compute_list_bind_uniform_set(list, us_splat[p_idx], 0)
+		for splat in _pending_splats:
+			var pt: Vector2 = splat["point"]
+			var frc: Vector2 = splat["force"]
+			var col: Color = splat["color"]
+			var rad: float = splat["radius"]
+
+			# Gaussian falloff: beyond ~2.2 radii the contribution is under
+			# 1/250, so clip the dispatch there.
+			var rad_px := maxf(rad * float(grid_size.x), 1.0) * 2.2
+			var cx := pt.x * float(grid_size.x)
+			var cy := pt.y * float(grid_size.y)
+			var min_x := clampi(int(floor((cx - rad_px) / 8.0)), 0, groups_x - 1)
+			var min_y := clampi(int(floor((cy - rad_px) / 8.0)), 0, groups_y - 1)
+			var max_x := clampi(int(ceil((cx + rad_px) / 8.0)), 0, groups_x)
+			var max_y := clampi(int(ceil((cy + rad_px) / 8.0)), 0, groups_y)
+			var span_x := maxi(max_x - min_x, 1)
+			var span_y := maxi(max_y - min_y, 1)
+
+			var pc_splat := PackedByteArray()
+			pc_splat.append_array(PackedFloat32Array([
+				pt.x, pt.y,
+				frc.x, frc.y,
+				col.r, col.g, col.b, col.a,
+				rad,
+				splat["strength"],
+				splat.get("mode", 0.0),
+				dye_gain
+			]).to_byte_array())
+			pc_splat.append_array(PackedInt32Array([
+				min_x * 8, min_y * 8,
+				0, 0
+			]).to_byte_array())
+			rd.compute_list_set_push_constant(list, pc_splat, pc_splat.size())
+			rd.compute_list_dispatch(list, span_x, span_y, 1)
+			rd.compute_list_add_barrier(list)
+		rd.compute_list_end()
 	_pending_splats.clear()
-	rd.compute_list_end()
 
 	# 2. Sub-stepped Navier-Stokes
 	var pc_advect := PackedFloat32Array([
@@ -436,8 +536,8 @@ func step_simulation(delta: float) -> void:
 		dissipation,
 		dye_dissipation,
 		dye_floor,
-		0.0,
-		0.0
+		REF_TEXEL.x,
+		REF_TEXEL.y
 	]).to_byte_array()
 	var pc_proj := PackedFloat32Array([
 		texel[0], texel[1],

@@ -907,15 +907,11 @@ color = Color(0.02, 0.01, 0.05, 0.88)
 
 [node name="SettingsFrame" type="Control" parent="SettingsModal"]
 layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -460.0
-offset_top = -360.0
-offset_right = 460.0
-offset_bottom = 360.0
+anchors_preset = -1
+anchor_left = 0.11
+anchor_top = 0.025
+anchor_right = 0.89
+anchor_bottom = 0.975
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
@@ -940,175 +936,281 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="SettingsLayout" type="VBoxContainer" parent="SettingsModal/SettingsFrame/SettingsPanel"]
+[node name="SettingsOuter" type="VBoxContainer" parent="SettingsModal/SettingsFrame/SettingsPanel"]
 layout_mode = 2
 mouse_filter = 2
-theme_override_constants/separation = 20
-alignment = 1
+theme_override_constants/separation = 14
 
-[node name="Title" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout"]
+[node name="Title" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter"]
 layout_mode = 2
 theme_type_variation = &"H2"
 theme_override_colors/font_color = Color(0, 0.898, 1, 1)
 text = "⚙️ SETTINGS"
 horizontal_alignment = 1
 
-[node name="AudioHeader" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout"]
+[node name="SettingsScroll" type="ScrollContainer" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="SettingsLayout" type="VBoxContainer" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+theme_override_constants/separation = 16
+
+[node name="AudioHeader" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout"]
 layout_mode = 2
 theme_type_variation = &"Muted"
 text = "AUDIO"
 horizontal_alignment = 1
 
-[node name="AudioGrid" type="GridContainer" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout"]
+[node name="AudioGrid" type="GridContainer" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout"]
 layout_mode = 2
 size_flags_horizontal = 4
 mouse_filter = 2
 theme_override_constants/h_separation = 30
-theme_override_constants/v_separation = 14
+theme_override_constants/v_separation = 12
 columns = 2
 
-[node name="MasterLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout/AudioGrid"]
-custom_minimum_size = Vector2(260, 0)
+[node name="MasterLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/AudioGrid"]
+custom_minimum_size = Vector2(240, 0)
 layout_mode = 2
 text = "MASTER VOLUME"
 vertical_alignment = 1
 
-[node name="MasterSlider" type="HSlider" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout/AudioGrid"]
+[node name="MasterSlider" type="HSlider" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/AudioGrid"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(420, 28)
+custom_minimum_size = Vector2(380, 28)
 layout_mode = 2
 size_flags_vertical = 4
 value = 85.0
 
-[node name="MusicLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout/AudioGrid"]
-custom_minimum_size = Vector2(260, 0)
+[node name="MusicLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/AudioGrid"]
+custom_minimum_size = Vector2(240, 0)
 layout_mode = 2
 text = "MUSIC VOLUME"
 vertical_alignment = 1
 
-[node name="MusicSlider" type="HSlider" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout/AudioGrid"]
+[node name="MusicSlider" type="HSlider" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/AudioGrid"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(420, 28)
+custom_minimum_size = Vector2(380, 28)
 layout_mode = 2
 size_flags_vertical = 4
 value = 80.0
 
-[node name="SFXLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout/AudioGrid"]
-custom_minimum_size = Vector2(260, 0)
+[node name="SFXLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/AudioGrid"]
+custom_minimum_size = Vector2(240, 0)
 layout_mode = 2
 text = "SFX VOLUME"
 vertical_alignment = 1
 
-[node name="SFXSlider" type="HSlider" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout/AudioGrid"]
+[node name="SFXSlider" type="HSlider" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/AudioGrid"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(420, 28)
+custom_minimum_size = Vector2(380, 28)
 layout_mode = 2
 size_flags_vertical = 4
 value = 90.0
 
-[node name="VideoHeader" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout"]
+[node name="VideoHeader" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout"]
 layout_mode = 2
 theme_type_variation = &"Muted"
 text = "VIDEO"
 horizontal_alignment = 1
 
-[node name="VideoGrid" type="GridContainer" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout"]
+[node name="VideoGrid" type="GridContainer" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout"]
 layout_mode = 2
 size_flags_horizontal = 4
 mouse_filter = 2
 theme_override_constants/h_separation = 30
-theme_override_constants/v_separation = 14
+theme_override_constants/v_separation = 12
 columns = 2
 
-[node name="BloomLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout/VideoGrid"]
-custom_minimum_size = Vector2(260, 0)
+[node name="BloomLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/VideoGrid"]
+custom_minimum_size = Vector2(240, 0)
 layout_mode = 2
 text = "PLASMA BLOOM"
 vertical_alignment = 1
 
-[node name="BloomSlider" type="HSlider" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout/VideoGrid"]
+[node name="BloomSlider" type="HSlider" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/VideoGrid"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(420, 28)
+custom_minimum_size = Vector2(380, 28)
 layout_mode = 2
 size_flags_vertical = 4
 max_value = 3.0
 step = 0.1
 value = 1.2
 
-[node name="CALabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout/VideoGrid"]
-custom_minimum_size = Vector2(260, 0)
+[node name="CALabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/VideoGrid"]
+custom_minimum_size = Vector2(240, 0)
 layout_mode = 2
 text = "CHROMATIC DISPERSION"
 vertical_alignment = 1
 
-[node name="CASlider" type="HSlider" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout/VideoGrid"]
+[node name="CASlider" type="HSlider" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/VideoGrid"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(420, 28)
+custom_minimum_size = Vector2(380, 28)
 layout_mode = 2
 size_flags_vertical = 4
 max_value = 4.0
 step = 0.1
 value = 1.8
 
-[node name="FullscreenLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout/VideoGrid"]
-custom_minimum_size = Vector2(260, 0)
+[node name="FluidQualityLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/VideoGrid"]
+custom_minimum_size = Vector2(240, 0)
+layout_mode = 2
+text = "FLUID DETAIL"
+vertical_alignment = 1
+
+[node name="FluidQualityOption" type="OptionButton" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/VideoGrid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(380, 34)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="FullscreenLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/VideoGrid"]
+custom_minimum_size = Vector2(240, 0)
 layout_mode = 2
 text = "FULLSCREEN"
 vertical_alignment = 1
 
-[node name="FullscreenToggle" type="CheckButton" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout/VideoGrid"]
+[node name="FullscreenToggle" type="CheckButton" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/VideoGrid"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "OFF"
 
-[node name="VSyncLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout/VideoGrid"]
-custom_minimum_size = Vector2(260, 0)
+[node name="VSyncLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/VideoGrid"]
+custom_minimum_size = Vector2(240, 0)
 layout_mode = 2
 text = "VSYNC"
 vertical_alignment = 1
 
-[node name="VSyncToggle" type="CheckButton" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout/VideoGrid"]
+[node name="VSyncToggle" type="CheckButton" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/VideoGrid"]
 unique_name_in_owner = true
 layout_mode = 2
 button_pressed = true
 text = "ON"
 
-[node name="ReduceMotionLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout/VideoGrid"]
-custom_minimum_size = Vector2(260, 0)
+[node name="FluidQualityNote" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout"]
+layout_mode = 2
+theme_type_variation = &"Muted"
+text = "Changing fluid detail rebuilds the simulation and clears the field."
+horizontal_alignment = 1
+
+[node name="AccessHeader" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout"]
+layout_mode = 2
+theme_type_variation = &"Muted"
+text = "ACCESSIBILITY"
+horizontal_alignment = 1
+
+[node name="AccessGrid" type="GridContainer" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout"]
+layout_mode = 2
+size_flags_horizontal = 4
+mouse_filter = 2
+theme_override_constants/h_separation = 30
+theme_override_constants/v_separation = 12
+columns = 2
+
+[node name="ColorblindLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/AccessGrid"]
+custom_minimum_size = Vector2(240, 0)
+layout_mode = 2
+text = "COLOURBLIND MODE"
+vertical_alignment = 1
+
+[node name="ColorblindOption" type="OptionButton" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/AccessGrid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(380, 34)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="UIScaleLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/AccessGrid"]
+custom_minimum_size = Vector2(240, 0)
+layout_mode = 2
+text = "UI SCALE"
+vertical_alignment = 1
+
+[node name="UIScaleOption" type="OptionButton" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/AccessGrid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(380, 34)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="ShakeLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/AccessGrid"]
+custom_minimum_size = Vector2(240, 0)
+layout_mode = 2
+text = "SCREEN SHAKE"
+vertical_alignment = 1
+
+[node name="ShakeSlider" type="HSlider" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/AccessGrid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(380, 28)
+layout_mode = 2
+size_flags_vertical = 4
+value = 100.0
+
+[node name="ReduceMotionLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/AccessGrid"]
+custom_minimum_size = Vector2(240, 0)
 layout_mode = 2
 text = "REDUCE MOTION"
 vertical_alignment = 1
 
-[node name="ReduceMotionToggle" type="CheckButton" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout/VideoGrid"]
+[node name="ReduceMotionToggle" type="CheckButton" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/AccessGrid"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "OFF"
 
-[node name="ScreenFlashLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout/VideoGrid"]
-custom_minimum_size = Vector2(260, 0)
+[node name="ScreenFlashLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/AccessGrid"]
+custom_minimum_size = Vector2(240, 0)
 layout_mode = 2
 text = "SCREEN FLASH"
 vertical_alignment = 1
 
-[node name="ScreenFlashToggle" type="CheckButton" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout/VideoGrid"]
+[node name="ScreenFlashToggle" type="CheckButton" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/AccessGrid"]
 unique_name_in_owner = true
 layout_mode = 2
 button_pressed = true
 text = "ON"
 
-[node name="SettingsButtons" type="HBoxContainer" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout"]
+[node name="HapticsLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/AccessGrid"]
+custom_minimum_size = Vector2(240, 0)
+layout_mode = 2
+text = "GAMEPAD RUMBLE"
+vertical_alignment = 1
+
+[node name="HapticsToggle" type="CheckButton" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/AccessGrid"]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "ON"
+
+[node name="HapticsStrengthLabel" type="Label" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/AccessGrid"]
+custom_minimum_size = Vector2(240, 0)
+layout_mode = 2
+text = "RUMBLE STRENGTH"
+vertical_alignment = 1
+
+[node name="HapticsStrengthSlider" type="HSlider" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsScroll/SettingsLayout/AccessGrid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(380, 28)
+layout_mode = 2
+size_flags_vertical = 4
+value = 80.0
+
+[node name="SettingsButtons" type="HBoxContainer" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter"]
 layout_mode = 2
 mouse_filter = 2
 theme_override_constants/separation = 24
 alignment = 1
 
-[node name="CloseSettingsBtn" type="Button" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout/SettingsButtons"]
+[node name="CloseSettingsBtn" type="Button" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsButtons"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(240, 48)
 layout_mode = 2
 text = "← CLOSE"
 
-[node name="ResetSettingsBtn" type="Button" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsLayout/SettingsButtons"]
+[node name="ResetSettingsBtn" type="Button" parent="SettingsModal/SettingsFrame/SettingsPanel/SettingsOuter/SettingsButtons"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(200, 48)
 layout_mode = 2
