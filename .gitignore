@@ -3,6 +3,9 @@
 *.translation
 .import/
 
+# Agent worktrees and local agent scratch
+.claude/
+
 # Local agent / MCP (injected at runtime, not part of the game)
 .mcp/
 mcp_bridge.gd

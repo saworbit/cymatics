@@ -57,6 +57,16 @@ That's a Paddlin'/
 └── .github/          # CI and templates
 ```
 
+## Tests
+
+```bash
+bash tools/run_tests.sh /path/to/godot
+```
+
+Unit tests live in `tests/test_*.gd`; `tests/integration_run.gd` boots the real
+scene and checks invariants while hammering pause, restart, mode switches and
+fluid-quality changes. Both run headless and gate CI.
+
 Polish status and roadmap: [`docs/POLISH_PLAN.md`](docs/POLISH_PLAN.md). Agent notes: [`CLAUDE.md`](CLAUDE.md).
 
 ## Design docs

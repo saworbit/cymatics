@@ -266,7 +266,12 @@ func emit_event(kind: String, payload: Dictionary) -> void:
 	_file.store_line(JSON.stringify(row))
 	_events += 1
 
+var _finished := false
+
 func _finish(reason: String) -> void:
+	if _finished:
+		return
+	_finished = true
 	emit_event("lab_end", {"reason": reason, "matches": _matches_done, "events": _events})
 	var summary := {
 		"reason": reason,
@@ -296,6 +301,10 @@ func _finish(reason: String) -> void:
 		_file.close()
 		_file = null
 	print("[LabRecorder] %s" % JSON.stringify(summary))
+	# Windowed runs used to fall through here every physics frame, rewriting
+	# summary.json ~60 times a second forever. Latch, and stop recording even
+	# when we cannot quit the process.
+	set_physics_process(false)
 	if DisplayServer.get_name() == "headless":
 		get_tree().quit()
 
