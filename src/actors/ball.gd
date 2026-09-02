@@ -164,7 +164,11 @@ func _setup_sparks() -> void:
 	_sparks.process_material = mat
 	add_child(_sparks)
 
+static var _shared_spark_tex: Texture2D = null
+
 func _spark_texture() -> Texture2D:
+	if _shared_spark_tex != null:
+		return _shared_spark_tex
 	var img := Image.create(24, 24, false, Image.FORMAT_RGBA8)
 	for y in 24:
 		for x in 24:
@@ -172,7 +176,8 @@ func _spark_texture() -> Texture2D:
 			var d := p.length() / 12.0
 			var a := exp(-d * d * 7.0)
 			img.set_pixel(x, y, Color(1, 1, 1, a))
-	return ImageTexture.create_from_image(img)
+	_shared_spark_tex = ImageTexture.create_from_image(img)
+	return _shared_spark_tex
 
 func _setup_face() -> void:
 	face = preload("res://src/actors/character_face.gd").new()

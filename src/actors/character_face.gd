@@ -52,11 +52,11 @@ func setup(size: Vector2, flip: bool, base_lid: float = 0.0) -> void:
 	add_child(_bark)
 	_blink_cd = randf_range(1.2, 3.2)
 
-func set_mood(p_mood: Mood, duration: float = 0.7) -> void:
-	mood = p_mood
+func set_mood(p_mood: Variant, duration: float = 0.7) -> void:
+	mood = p_mood as Mood if p_mood is Mood else (p_mood as int as Mood)
 	_mood_time = duration
 
-func maybe_mood(p_mood: Mood, duration: float = 0.45) -> void:
+func maybe_mood(p_mood: Variant, duration: float = 0.45) -> void:
 	if _mood_time <= 0.05:
 		set_mood(p_mood, duration)
 

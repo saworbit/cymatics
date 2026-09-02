@@ -205,7 +205,7 @@ func _build_juice_nodes() -> void:
 
 	_help = get_node_or_null("BottomPanel/StatusContainer/ControlsHelp") as Label
 	if _help != null:
-		_help.text = "THAT'S A PADDLIN'  ·  Padd vs Lin  ·  mouse/WASD  ·  LMB stream  ·  RMB suck  ·  SPACE blast/stun  ·  [G] Gauntlet  [T] AI  [R] rematch"
+		_help.text = "THAT'S A PADDLIN'  ·  Padd vs Lin  ·  mouse/WASD  ·  LMB stream  ·  RMB suck  ·  SPACE blast/stun  ·  [G] Gauntlet  [M] music  [T] AI  [R] rematch"
 
 	var title := Label.new()
 	title.name = "GameTitle"
