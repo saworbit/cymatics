@@ -109,6 +109,12 @@ var _focus_tween: Tween
 @onready var vsync_toggle: CheckButton = %VSyncToggle
 @onready var reduce_motion_toggle: CheckButton = %ReduceMotionToggle
 @onready var screen_flash_toggle: CheckButton = %ScreenFlashToggle
+@onready var fluid_quality_option: OptionButton = %FluidQualityOption
+@onready var colorblind_option: OptionButton = %ColorblindOption
+@onready var ui_scale_option: OptionButton = %UIScaleOption
+@onready var shake_slider: HSlider = %ShakeSlider
+@onready var haptics_toggle: CheckButton = %HapticsToggle
+@onready var haptics_strength_slider: HSlider = %HapticsStrengthSlider
 @onready var close_settings_btn: Button = %CloseSettingsBtn
 @onready var reset_settings_btn: Button = %ResetSettingsBtn
 
@@ -129,6 +135,14 @@ var _stage_tab_buttons: Array[Button] = []
 # Gauntlet dossier selected stage
 var dossier_selected_stage: int = 0
 
+var _scale_root: UIScaleRoot
+
+func _ready() -> void:
+	# Wrap the layer so `ui_scale` can resize the whole menu without breaking
+	# anchors. Runs after @onready resolution, so cached references stay valid.
+	_scale_root = UIScaleRoot.install(self)
+	_apply_ui_scale()
+
 func setup(p_fluid: FluidSimulator, p_game: GameManager, p_audio: AudioManager, p_vfx: VFXManager, p_mat: ShaderMaterial = null) -> void:
 	fluid_sim = p_fluid
 	game_mgr = p_game
@@ -147,6 +161,7 @@ func setup(p_fluid: FluidSimulator, p_game: GameManager, p_audio: AudioManager, 
 	_setup_settings_controls()
 	_wire_focus_neighbors()
 	_apply_palette(0)
+	_apply_team_palette()
 	_refresh_toolbar_labels()
 	_switch_state(MenuState.MAIN)
 
@@ -382,7 +397,10 @@ func _wire_focus_neighbors() -> void:
 
 	# Settings: sliders then toggles then buttons, wrap top/bottom.
 	var settings_chain: Array[Control] = [master_slider, music_slider, sfx_slider, bloom_slider, ca_slider,
-		fullscreen_toggle, vsync_toggle, reduce_motion_toggle, screen_flash_toggle, close_settings_btn]
+		fluid_quality_option, fullscreen_toggle, vsync_toggle,
+		colorblind_option, ui_scale_option, shake_slider,
+		reduce_motion_toggle, screen_flash_toggle, haptics_toggle, haptics_strength_slider,
+		close_settings_btn]
 	for i in settings_chain.size():
 		var c := settings_chain[i]
 		var up := settings_chain[(i - 1 + settings_chain.size()) % settings_chain.size()]
@@ -391,7 +409,7 @@ func _wire_focus_neighbors() -> void:
 		c.focus_neighbor_bottom = c.get_path_to(down)
 		c.focus_next = c.get_path_to(down)
 		c.focus_previous = c.get_path_to(up)
-	reset_settings_btn.focus_neighbor_top = reset_settings_btn.get_path_to(screen_flash_toggle)
+	reset_settings_btn.focus_neighbor_top = reset_settings_btn.get_path_to(haptics_strength_slider)
 	reset_settings_btn.focus_neighbor_bottom = reset_settings_btn.get_path_to(master_slider)
 
 	# Pause: wrap vertically.
@@ -413,6 +431,12 @@ func _setup_settings_controls() -> void:
 	_bind_setting_toggle(vsync_toggle, "vsync")
 	_bind_setting_toggle(reduce_motion_toggle, "reduce_motion")
 	_bind_setting_toggle(screen_flash_toggle, "screen_flash")
+	_bind_setting_slider(shake_slider, "screen_shake", 100.0)
+	_bind_setting_toggle(haptics_toggle, "haptics")
+	_bind_setting_slider(haptics_strength_slider, "haptics_strength", 100.0)
+	_setup_colorblind_option()
+	_setup_ui_scale_option()
+	_setup_fluid_quality_option()
 
 	var s := _get_settings()
 	if s != null and not s.is_connected("changed", _on_setting_changed):
@@ -421,8 +445,81 @@ func _setup_settings_controls() -> void:
 	# Push the persisted values into systems that Settings does not own.
 	if s == null:
 		return
-	for key in ["bloom", "chromatic", "reduce_motion", "music_enabled", "master_volume", "music_volume", "sfx_volume"]:
+	for key in ["bloom", "chromatic", "reduce_motion", "music_enabled", "master_volume",
+			"music_volume", "sfx_volume", "screen_shake", "ui_scale", "colorblind_mode"]:
 		_apply_setting_to_systems(key, _setting(key))
+
+## Colourblind mode picker. Item ids match the `colorblind_mode` setting.
+func _setup_colorblind_option() -> void:
+	if colorblind_option == null:
+		return
+	colorblind_option.clear()
+	for i in _colorblind_names().size():
+		colorblind_option.add_item(String(_colorblind_names()[i]), i)
+	colorblind_option.select(clampi(int(_setting("colorblind_mode", 0)), 0, colorblind_option.item_count - 1))
+	colorblind_option.item_selected.connect(func(idx: int):
+		_sfx_confirm()
+		_set_setting("colorblind_mode", idx)
+	)
+
+## Fluid detail picker. FluidSimulator listens to `Settings.changed` and
+## rebuilds its grid, so nothing else has to be pushed from here.
+func _setup_fluid_quality_option() -> void:
+	if fluid_quality_option == null:
+		return
+	var names := _fluid_quality_names()
+	fluid_quality_option.clear()
+	for i in names.size():
+		fluid_quality_option.add_item(String(names[i]), i)
+	fluid_quality_option.select(clampi(int(_setting("fluid_quality", 1)), 0, fluid_quality_option.item_count - 1))
+	fluid_quality_option.item_selected.connect(func(idx: int):
+		_sfx_confirm()
+		_set_setting("fluid_quality", idx)
+	)
+
+func _fluid_quality_names() -> Array:
+	var s := _get_settings()
+	if s != null and s.has_method("fluid_quality_names"):
+		return s.call("fluid_quality_names")
+	return ["LOW", "MEDIUM", "HIGH", "ULTRA"]
+
+func _colorblind_names() -> Array:
+	var s := _get_settings()
+	if s != null and s.has_method("colorblind_mode_names"):
+		return s.call("colorblind_mode_names")
+	return ["OFF", "DEUTERANOPIA", "PROTANOPIA", "TRITANOPIA"]
+
+func _ui_scale_steps() -> Array:
+	var s := _get_settings()
+	if s != null and s.has_method("ui_scale_steps"):
+		return s.call("ui_scale_steps")
+	return [0.8, 1.0, 1.25, 1.5]
+
+## UI scale picker: fixed steps so a stick nudge cannot land on an odd value.
+func _setup_ui_scale_option() -> void:
+	if ui_scale_option == null:
+		return
+	var steps := _ui_scale_steps()
+	ui_scale_option.clear()
+	for i in steps.size():
+		ui_scale_option.add_item("%d%%" % int(round(float(steps[i]) * 100.0)), i)
+	ui_scale_option.select(_ui_scale_index(float(_setting("ui_scale", 1.0))))
+	ui_scale_option.item_selected.connect(func(idx: int):
+		_sfx_confirm()
+		var st := _ui_scale_steps()
+		_set_setting("ui_scale", float(st[clampi(idx, 0, st.size() - 1)]))
+	)
+
+func _ui_scale_index(value: float) -> int:
+	var steps := _ui_scale_steps()
+	var best := 1
+	var best_d := 1e9
+	for i in steps.size():
+		var d: float = absf(float(steps[i]) - value)
+		if d < best_d:
+			best_d = d
+			best = i
+	return best
 
 func _bind_setting_slider(slider: HSlider, key: String, scale: float) -> void:
 	slider.set_value_no_signal(float(_setting(key, 0.0)) * scale)
@@ -452,6 +549,18 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 		"vsync": _sync_toggle(vsync_toggle, bool(value))
 		"reduce_motion": _sync_toggle(reduce_motion_toggle, bool(value))
 		"screen_flash": _sync_toggle(screen_flash_toggle, bool(value))
+		"screen_shake": shake_slider.set_value_no_signal(float(value) * 100.0)
+		"haptics": _sync_toggle(haptics_toggle, bool(value))
+		"haptics_strength": haptics_strength_slider.set_value_no_signal(float(value) * 100.0)
+		"fluid_quality":
+			if fluid_quality_option != null:
+				fluid_quality_option.select(clampi(int(value), 0, fluid_quality_option.item_count - 1))
+		"colorblind_mode":
+			if colorblind_option != null:
+				colorblind_option.select(clampi(int(value), 0, colorblind_option.item_count - 1))
+		"ui_scale":
+			if ui_scale_option != null:
+				ui_scale_option.select(_ui_scale_index(float(value)))
 	_apply_setting_to_systems(key, value)
 	_refresh_toolbar_labels()
 
@@ -470,6 +579,13 @@ func _apply_setting_to_systems(key: String, value: Variant) -> void:
 		"reduce_motion":
 			if vfx_mgr != null and "reduce_motion" in vfx_mgr:
 				vfx_mgr.set("reduce_motion", bool(value))
+		"screen_shake":
+			if vfx_mgr != null and "shake_scale" in vfx_mgr:
+				vfx_mgr.set("shake_scale", clampf(float(value), 0.0, 1.0))
+		"ui_scale":
+			_apply_ui_scale()
+		"colorblind_mode":
+			_apply_team_palette()
 		"music_enabled":
 			_audio("set_music_enabled", [bool(value)])
 		"master_volume", "music_volume", "sfx_volume":
@@ -481,6 +597,53 @@ func _apply_setting_to_systems(key: String, value: Variant) -> void:
 					"master_volume": _audio("set_master_volume", [float(value)])
 					"music_volume": _audio("set_music_volume", [float(value)])
 					"sfx_volume": _audio("set_sfx_volume", [float(value)])
+
+## The title screen and the sandbox toolbar are a fixed 1920x1080 composition
+## (four 390 px mode cards plus the toolbar row); they cannot be enlarged past
+## what still fits. Every modal is proportional, so those take the full range.
+const MENU_FIXED_SIZE := Vector2(1780.0, 1010.0)
+
+func _ui_scale_cap() -> float:
+	if current_state != MenuState.MAIN and current_state != MenuState.SANDBOX_LAB:
+		return 99.0
+	var vp := get_viewport()
+	var sz := Vector2(1920.0, 1080.0)
+	if vp != null:
+		var r := vp.get_visible_rect().size
+		if r.x > 1.0 and r.y > 1.0:
+			sz = r
+	return minf(sz.x / MENU_FIXED_SIZE.x, sz.y / MENU_FIXED_SIZE.y)
+
+func _apply_ui_scale() -> void:
+	if _scale_root == null:
+		return
+	_scale_root.set_ui_scale(minf(float(_setting("ui_scale", 1.0)), _ui_scale_cap()))
+
+## Live team colour, honouring `colorblind_mode`.
+func team_color(player_id: int) -> Color:
+	var s := _get_settings()
+	if s != null and s.has_method("team_color"):
+		return s.call("team_color", player_id)
+	return Color(0.0, 0.898, 1.0) if player_id == 0 else Color(1.0, 0.0, 0.667)
+
+## Repaint the menu elements that stand for a team: the two mode-card accents,
+## the mascot name plates and the boss dossier headline.
+func _apply_team_palette() -> void:
+	var c1 := team_color(0)
+	var c2 := team_color(1)
+	if card_arcade != null and "accent" in card_arcade:
+		card_arcade.set("accent", c1)
+	if card_pvp != null and "accent" in card_pvp:
+		card_pvp.set("accent", c2)
+	_tint_label(main_menu_panel, "MascotPadd/PaddName", c1)
+	_tint_label(main_menu_panel, "MascotLin/LinName", c2)
+
+func _tint_label(root: Node, path: String, col: Color) -> void:
+	if root == null:
+		return
+	var l := root.get_node_or_null(path) as Label
+	if l != null:
+		l.add_theme_color_override("font_color", col)
 
 func _refresh_toolbar_labels() -> void:
 	var music_on := bool(_setting("music_enabled", true))
@@ -832,6 +995,9 @@ func _switch_state(new_state: MenuState) -> void:
 			focus_target = resume_btn
 		MenuState.HIDDEN:
 			pass
+
+	# The cap depends on which screen is showing, so re-apply on every switch.
+	_apply_ui_scale()
 
 	if previous != current_state and current_state != MenuState.HIDDEN:
 		_audio("trigger_menu_open")

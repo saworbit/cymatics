@@ -14,12 +14,18 @@ signal shattered(pos: Vector2, vel: Vector2)
 
 enum Shape { ROUND, TRIANGLE, CUBE, STAR, RUGBY }
 
-@export var radius := 18.0
-@export var base_speed := 820.0
-@export var max_speed := 2100.0
-@export var min_speed := 560.0
-@export var bounce_damping := 0.95
-const MAGNUS_ACCEL := 620.0
+const DEFAULT_TUNING := "res://src/tuning/ball_default.tres"
+
+## Every feel constant lives here. Swap the resource to retune without code.
+@export var tuning: BallTuning
+
+# Mirrors of the tuning values other systems read or write directly
+# (ChaosDirector clones, Paddle drop/slingshot clamps). Seeded in _ready().
+var radius := 0.0
+var base_speed := 0.0
+var max_speed := 0.0
+var min_speed := 0.0
+var bounce_damping := 0.0
 
 var spin := 0.0
 var rally_hits := 0
@@ -85,6 +91,7 @@ func set_paddles(p_left: Paddle, p_right: Paddle) -> void:
 	paddle_right = p_right
 
 func _ready() -> void:
+	_ensure_tuning()
 	z_index = 12
 	add_to_group("cymatics_balls")
 	_setup_orb()
@@ -94,6 +101,17 @@ func _ready() -> void:
 	if collision_shape and collision_shape.shape is CircleShape2D:
 		(collision_shape.shape as CircleShape2D).radius = radius
 	collision_mask = collision_mask | 4
+
+## Loads the default tuning when no resource was assigned, then copies the
+## values other systems touch directly onto the node.
+func _ensure_tuning() -> void:
+	if tuning == null:
+		tuning = load(DEFAULT_TUNING) as BallTuning
+	radius = tuning.radius
+	base_speed = tuning.base_speed
+	max_speed = tuning.max_speed
+	min_speed = tuning.min_speed
+	bounce_damping = tuning.bounce_damping
 
 func _exit_tree() -> void:
 	if _trail != null and is_instance_valid(_trail):
@@ -259,7 +277,7 @@ func hold_for_serve(p: Paddle) -> void:
 	velocity = Vector2.ZERO
 	if p != null and is_instance_valid(p):
 		var fwd := Vector2.RIGHT if p.player_id == 0 else Vector2.LEFT
-		global_position = p.global_position + fwd * 78.0
+		global_position = p.global_position + fwd * tuning.serve_offset
 		if p.has_method("begin_serve_hold"):
 			p.begin_serve_hold()
 	spin = 0.0
@@ -361,7 +379,7 @@ func _physics_process(delta: float) -> void:
 		if shape_time <= 0.0 and shape_type != Shape.ROUND:
 			shape_type = Shape.ROUND
 			_squash = Vector2(1.3, 0.7)
-	shape_angle += (spin * 14.0 + velocity.x * 0.003) * delta
+	shape_angle += (spin * tuning.shape_spin_from_spin + velocity.x * tuning.shape_spin_from_vx) * delta
 
 	if is_serving:
 		_process_serve(delta)
@@ -382,7 +400,7 @@ func _physics_process(delta: float) -> void:
 	_spawn_afterimage(delta)
 	_update_lock_pulse(delta)
 	_update_face()
-	_squash = _squash.lerp(Vector2.ONE, clampf(delta * 14.0, 0.0, 1.0))
+	_squash = _squash.lerp(Vector2.ONE, clampf(delta * tuning.squash_relax_rate, 0.0, 1.0))
 
 	if audio_mgr != null:
 		var curl_val := fluid_sim.sample_curl_at(global_position) if fluid_sim else 0.0
@@ -391,13 +409,14 @@ func _physics_process(delta: float) -> void:
 	_update_visuals()
 
 func _process_serve(delta: float) -> void:
-	_serve_bob += delta * 7.0
+	var t := tuning
+	_serve_bob += delta * t.serve_bob_rate
 	if serve_paddle != null and is_instance_valid(serve_paddle):
 		var fwd := Vector2.RIGHT if serve_paddle.player_id == 0 else Vector2.LEFT
-		global_position = serve_paddle.global_position + fwd * 78.0
-		global_position.y += sin(_serve_bob) * 7.0
+		global_position = serve_paddle.global_position + fwd * t.serve_offset
+		global_position.y += sin(_serve_bob) * t.serve_bob_amplitude
 	else:
-		global_position = Vector2(960, 540 + sin(_serve_bob) * 10.0)
+		global_position = Vector2(960, 540 + sin(_serve_bob) * t.serve_bob_amplitude_loose)
 
 func _integrate_flight(delta: float) -> void:
 	if captured_by != null:
@@ -405,6 +424,7 @@ func _integrate_flight(delta: float) -> void:
 			_integrate_captured(delta)
 			return
 		captured_by = null
+	var t := tuning
 	var speed := velocity.length()
 	if speed < 1.0:
 		velocity = Vector2.RIGHT * min_speed
@@ -414,30 +434,30 @@ func _integrate_flight(delta: float) -> void:
 	if fluid_sim != null:
 		# Clamped: the field is a nudge, never a teleport. Guards the CPU fallback,
 		# whose grid accumulates the ball's own wake without projection.
-		var field_cap := 2400.0
+		var field_cap := t.fluid_sample_cap_gpu
 		if fluid_sim.get("_cpu_fallback"):
 			# The CPU grid has no projection and hoards the ball's own wake; keep it advisory.
-			field_cap = 120.0
+			field_cap = t.fluid_sample_cap_cpu
 		var fluid_vel := fluid_sim.sample_velocity_at(global_position).limit_length(field_cap)
-		var curl := clampf(fluid_sim.sample_curl_at(global_position), -6.0, 6.0)
+		var curl := clampf(fluid_sim.sample_curl_at(global_position), -t.curl_clamp, t.curl_clamp)
 		var heading := velocity / speed
 
 		# Ride currents: strong sideways deflection, modest aligned boost. Never steal speed.
 		var aligned := fluid_vel.dot(heading)
 		var lateral := fluid_vel - heading * aligned
-		velocity += lateral * (3.4 * delta)
-		if aligned > 40.0:
-			velocity += heading * (minf(aligned, 1600.0) * 0.28 * delta)
-		elif aligned < -80.0:
-			velocity += heading * (aligned * 0.08 * delta)
+		velocity += lateral * (t.flow_lateral_gain * delta)
+		if aligned > t.flow_aligned_threshold:
+			velocity += heading * (minf(aligned, t.flow_aligned_cap) * t.flow_aligned_gain * delta)
+		elif aligned < t.flow_drag_threshold:
+			velocity += heading * (aligned * t.flow_drag_gain * delta)
 
-		spin = clampf(spin + curl * (0.85 * delta), -1.0, 1.0)
-		spin = move_toward(spin, 0.0, delta * 0.12)
+		spin = clampf(spin + curl * (t.spin_curl_gain * delta), -1.0, 1.0)
+		spin = move_toward(spin, 0.0, delta * t.spin_decay)
 		var mag_dir := Vector2(-heading.y, heading.x)
-		var lift_mult := 1.75 if shape_type == Shape.STAR else 1.0
-		velocity += mag_dir * (spin * MAGNUS_ACCEL * lift_mult * delta)
-		if absf(curl) > 1.4:
-			velocity += mag_dir * (signf(curl) * 280.0 * delta)
+		var lift_mult := t.star_lift_mult if shape_type == Shape.STAR else 1.0
+		velocity += mag_dir * (spin * t.magnus_accel * lift_mult * delta)
+		if absf(curl) > t.curl_kick_threshold:
+			velocity += mag_dir * (signf(curl) * t.curl_kick_accel * delta)
 
 		# 3. Bow shock and fluid wake injection
 		var wake_color := Color(1.0, 0.85, 0.2, 0.85)
@@ -456,32 +476,33 @@ func _integrate_flight(delta: float) -> void:
 		elif is_in_overdrive:
 			wake_color = Color(1.0, 0.28, 0.05, 0.95)
 
-		if speed > 400.0:
-			var wake_force := heading * (speed * 0.9)
-			var wake_rad := radius * (2.2 + clampf((speed - 500.0) / 900.0, 0.0, 1.8))
+		if speed > t.wake_speed_threshold:
+			var wake_force := heading * (speed * t.wake_force_scale)
+			var wake_rad := radius * (t.wake_radius_base + clampf((speed - t.wake_radius_speed_ref) / t.wake_radius_speed_span, 0.0, t.wake_radius_speed_gain))
 			fluid_sim.inject_force(global_position, wake_force, wake_rad, wake_color)
 
 			# Fast ball generates flanking von Kármán vortex eddies
-			if speed > 850.0 or shape_type == Shape.STAR:
-				var flank_offset := mag_dir * (radius * 1.5)
-				fluid_sim.inject_vortex(global_position + flank_offset, 3.5 * (speed / 1000.0), wake_rad * 0.8, wake_color)
-				fluid_sim.inject_vortex(global_position - flank_offset, -3.5 * (speed / 1000.0), wake_rad * 0.8, wake_color)
+			if speed > t.vortex_speed_threshold or shape_type == Shape.STAR:
+				var flank_offset := mag_dir * (radius * t.vortex_flank_offset)
+				var eddy := t.vortex_strength * (speed / t.vortex_speed_ref)
+				fluid_sim.inject_vortex(global_position + flank_offset, eddy, wake_rad * t.vortex_radius_scale, wake_color)
+				fluid_sim.inject_vortex(global_position - flank_offset, -eddy, wake_rad * t.vortex_radius_scale, wake_color)
 		else:
-			fluid_sim.inject_dye(global_position, wake_color, radius * 2.0)
+			fluid_sim.inject_dye(global_position, wake_color, radius * t.idle_dye_radius_scale)
 
 	speed = velocity.length()
-	var floor_speed := min_speed + minf(rally_hits * 16.0, 140.0)
+	var floor_speed := min_speed + minf(rally_hits * t.floor_growth_per_hit, t.floor_growth_cap)
 	if is_in_overdrive:
-		floor_speed += 70.0
+		floor_speed += t.floor_overdrive_bonus
 	if is_in_cymatic_lock:
-		floor_speed += 140.0
+		floor_speed += t.floor_lock_bonus
 	speed = clampf(speed, floor_speed, _speed_cap())
 	velocity = velocity.normalized() * speed
 
 	# Stretch along velocity
-	var stretch := clampf((speed - 500.0) / 1400.0, 0.0, 1.0)
-	var target_squash := Vector2(1.0 + stretch * 0.55, 1.0 - stretch * 0.28)
-	_squash = _squash.lerp(target_squash, clampf(delta * 10.0, 0.0, 1.0))
+	var stretch := clampf((speed - t.stretch_speed_ref) / t.stretch_speed_span, 0.0, 1.0)
+	var target_squash := Vector2(1.0 + stretch * t.stretch_along, 1.0 - stretch * t.stretch_across)
+	_squash = _squash.lerp(target_squash, clampf(delta * t.stretch_lerp_rate, 0.0, 1.0))
 
 	var collision := move_and_collide(velocity * delta)
 	if collision != null:
@@ -501,15 +522,16 @@ func _integrate_flight(delta: float) -> void:
 ## point this tick. No speed floor, no fluid coupling, no wall juice; the
 ## captor's own body is passed through so the orbit can hug the paddle.
 func _integrate_captured(delta: float) -> void:
+	var t := tuning
 	var speed := velocity.length()
 	var heading := velocity / speed if speed > 1.0 else Vector2.RIGHT
-	spin = move_toward(spin, 0.0, delta * 0.05)
+	spin = move_toward(spin, 0.0, delta * t.capture_spin_decay)
 	if fluid_sim != null:
-		fluid_sim.inject_dye(global_position, Color(1.0, 0.9, 0.45, 0.6), radius * 1.6)
-		if speed > 200.0:
-			fluid_sim.inject_force(global_position, heading * (speed * 0.5), radius * 2.0, Color(1.0, 0.85, 0.3, 0.5))
+		fluid_sim.inject_dye(global_position, Color(1.0, 0.9, 0.45, 0.6), radius * t.capture_dye_radius_scale)
+		if speed > t.capture_force_speed_threshold:
+			fluid_sim.inject_force(global_position, heading * (speed * t.capture_force_scale), radius * t.capture_force_radius_scale, Color(1.0, 0.85, 0.3, 0.5))
 	var stretch := clampf((speed - 200.0) / 900.0, 0.0, 0.6)
-	_squash = _squash.lerp(Vector2(1.0 + stretch * 0.4, 1.0 - stretch * 0.2), clampf(delta * 10.0, 0.0, 1.0))
+	_squash = _squash.lerp(Vector2(1.0 + stretch * 0.4, 1.0 - stretch * 0.2), clampf(delta * t.stretch_lerp_rate, 0.0, 1.0))
 	var step := velocity * delta
 	var collision := move_and_collide(step, true)
 	if collision != null and collision.get_collider() == captured_by:
@@ -527,16 +549,17 @@ func _integrate_captured(delta: float) -> void:
 
 ## Shared wall contact: shape deflection, damping, and juice (fluid, camera, SFX, signal).
 func _bounce_off_wall(surface_normal: Vector2, contact: Vector2) -> void:
+	var tune := tuning
 	var normal := surface_normal
 	if shape_type == Shape.TRIANGLE:
-		var facet_deflect := Vector2(cos(shape_angle), sin(shape_angle)) * 0.24
+		var facet_deflect := Vector2(cos(shape_angle), sin(shape_angle)) * tune.triangle_facet_deflect
 		normal = (normal + facet_deflect).normalized()
 		if fluid_sim != null:
-			fluid_sim.inject_vortex(contact, 4.0 * signf(spin), 120.0, Color(0.3, 1.0, 0.8, 0.6))
+			fluid_sim.inject_vortex(contact, tune.triangle_wall_vortex * signf(spin), tune.triangle_wall_vortex_radius, Color(0.3, 1.0, 0.8, 0.6))
 	elif shape_type == Shape.CUBE:
 		_squash = Vector2(0.5, 1.5)
 	elif shape_type == Shape.STAR:
-		spin = clampf(spin * -1.2 + randf_range(-0.3, 0.3), -1.0, 1.0)
+		spin = clampf(spin * tune.star_wall_spin_flip + randf_range(-tune.star_wall_spin_jitter, tune.star_wall_spin_jitter), -1.0, 1.0)
 	elif shape_type == Shape.RUGBY:
 		_squash = Vector2(1.6, 0.5)
 
@@ -546,48 +569,49 @@ func _bounce_off_wall(surface_normal: Vector2, contact: Vector2) -> void:
 	var spd := velocity.length()
 	if shape_type != Shape.CUBE and shape_type != Shape.RUGBY:
 		_squash = Vector2(1.25, 0.7) if absf(normal.y) > 0.5 else Vector2(0.72, 1.28)
-	var t := clampf((spd - 500.0) / 1400.0, 0.0, 1.0)
+	var t := clampf((spd - tune.wall_juice_speed_ref) / tune.wall_juice_speed_span, 0.0, 1.0)
 	if fluid_sim != null:
 		var wcol := Color(1.0, 0.95, 0.8, 0.5 + 0.35 * t)
-		fluid_sim.inject_shockwave(contact, normal, 700.0 + 1300.0 * t, wcol)
+		fluid_sim.inject_shockwave(contact, normal, tune.wall_shock_base + tune.wall_shock_gain * t, wcol)
 	if vfx_mgr != null:
 		vfx_mgr.spawn_wall_hit(contact, normal, t)
-		vfx_mgr.apply_camera_kick(normal, 0.12 + 0.3 * t)
+		vfx_mgr.apply_camera_kick(normal, tune.wall_camera_kick_base + tune.wall_camera_kick_gain * t)
 	if audio_mgr != null:
 		if audio_mgr.has_method("trigger_wall_hit"):
 			audio_mgr.call("trigger_wall_hit", contact, spd)
 		else:
 			audio_mgr.trigger_impact(spd * 0.7, contact, false)
 	hit_wall.emit(contact, spd)
-	if spd > 1000.0:
+	if spd > tune.wall_ow_speed:
 		emote(4, 0.3, "OW")
 
 func _handle_walls_and_goals() -> void:
+	var t := tuning
 	if captured_by != null:
 		# Orbiting: keep inside the court silently; the captor clamps the orbit itself.
-		global_position.y = clampf(global_position.y, 58.0, 1022.0)
-		global_position.x = clampf(global_position.x, 40.0, 1880.0)
+		global_position.y = clampf(global_position.y, t.court_top_y, t.court_bottom_y)
+		global_position.x = clampf(global_position.x, t.capture_clamp_min_x, t.capture_clamp_max_x)
 		return
-	if global_position.y < 58.0:
-		global_position.y = 58.0
+	if global_position.y < t.court_top_y:
+		global_position.y = t.court_top_y
 		if velocity.y < 0.0:
-			_bounce_off_wall(Vector2.DOWN, Vector2(global_position.x, 40.0))
-	elif global_position.y > 1022.0:
-		global_position.y = 1022.0
+			_bounce_off_wall(Vector2.DOWN, Vector2(global_position.x, t.wall_contact_top_y))
+	elif global_position.y > t.court_bottom_y:
+		global_position.y = t.court_bottom_y
 		if velocity.y > 0.0:
-			_bounce_off_wall(Vector2.UP, Vector2(global_position.x, 1040.0))
+			_bounce_off_wall(Vector2.UP, Vector2(global_position.x, t.wall_contact_bottom_y))
 
 	if not is_scored:
-		if global_position.x < 22.0:
+		if global_position.x < t.goal_left_x:
 			_score_goal(0)
-		elif global_position.x > 1898.0:
+		elif global_position.x > t.goal_right_x:
 			_score_goal(1)
 
 func _update_face() -> void:
 	if face == null:
 		return
-	if velocity.length() > 40.0:
-		var ahead := global_position + velocity.normalized() * 220.0
+	if velocity.length() > tuning.face_look_speed:
+		var ahead := global_position + velocity.normalized() * tuning.face_look_ahead
 		face.look_at_point(global_position, ahead)
 	if fireball_time > 0.0:
 		face.maybe_mood(9, 0.2)
@@ -602,7 +626,7 @@ func _score_goal(side: int) -> void:
 	emote(3, 0.8, "BOOM")
 	velocity = Vector2.ZERO
 	visible = true
-	global_position.x = clampf(global_position.x, 36.0, 1884.0)
+	global_position.x = clampf(global_position.x, tuning.goal_rest_min_x, tuning.goal_rest_max_x)
 	_clear_trail()
 	goal_reached.emit(side)
 
@@ -625,28 +649,29 @@ func _update_lock_pulse(delta: float) -> void:
 	if _pulse_cd > 0.0:
 		return
 	if is_in_cymatic_lock:
-		_pulse_cd = 0.5
-		vfx_mgr.spawn_lock_pulse(global_position, Color(1.0, 1.0, 1.0), 0.38, 300.0)
+		_pulse_cd = tuning.lock_pulse_period
+		vfx_mgr.spawn_lock_pulse(global_position, Color(1.0, 1.0, 1.0), tuning.lock_pulse_alpha, tuning.lock_pulse_radius)
 	else:
-		_pulse_cd = 1.0
-		vfx_mgr.spawn_lock_pulse(global_position, Color(1.0, 0.6, 0.2), 0.22, 240.0)
+		_pulse_cd = tuning.overdrive_pulse_period
+		vfx_mgr.spawn_lock_pulse(global_position, Color(1.0, 0.6, 0.2), tuning.overdrive_pulse_alpha, tuning.overdrive_pulse_radius)
 
 func _check_near_miss() -> void:
 	if captured_by != null:
 		return
-	if paddle_left != null and velocity.x < 0.0 and global_position.x < paddle_left.global_position.x - 8.0:
+	var t := tuning
+	if paddle_left != null and velocity.x < 0.0 and global_position.x < paddle_left.global_position.x - t.near_miss_cross_margin:
 		if not _crossed_left:
 			_crossed_left = true
-			var thresh_l := 70.0 * paddle_left.size_mod + 45.0
+			var thresh_l := t.near_miss_height_scale * paddle_left.size_mod + t.near_miss_height_flat
 			if absf(global_position.y - paddle_left.global_position.y) < thresh_l:
 				near_miss.emit(0, global_position)
 	elif velocity.x > 0.0:
 		_crossed_left = false
 
-	if paddle_right != null and velocity.x > 0.0 and global_position.x > paddle_right.global_position.x + 8.0:
+	if paddle_right != null and velocity.x > 0.0 and global_position.x > paddle_right.global_position.x + t.near_miss_cross_margin:
 		if not _crossed_right:
 			_crossed_right = true
-			var thresh_r := 70.0 * paddle_right.size_mod + 45.0
+			var thresh_r := t.near_miss_height_scale * paddle_right.size_mod + t.near_miss_height_flat
 			if absf(global_position.y - paddle_right.global_position.y) < thresh_r:
 				near_miss.emit(1, global_position)
 	elif velocity.x < 0.0:
@@ -659,7 +684,7 @@ func magnus_accel(p_vel: Vector2 = Vector2.ZERO, p_spin: float = INF) -> Vector2
 	if spd < 1.0:
 		return Vector2.ZERO
 	var heading := vel / spd
-	return Vector2(-heading.y, heading.x) * (s * MAGNUS_ACCEL)
+	return Vector2(-heading.y, heading.x) * (s * tuning.magnus_accel)
 
 func resolve_carom(orb: Powerup, bpos: Vector2, bvel: Vector2, bspin: float) -> Dictionary:
 	var empty := {
@@ -677,25 +702,26 @@ func resolve_carom(orb: Powerup, bpos: Vector2, bvel: Vector2, bspin: float) -> 
 	if n.length_squared() < 0.0001:
 		n = bvel.normalized() if bvel.length_squared() > 1.0 else Vector2.RIGHT
 	n = n.normalized()
+	var t := tuning
 	var v_rel := bvel - orb.drift_velocity
 	var closing := v_rel.dot(n)
-	if closing < 8.0:
+	if closing < t.carom_min_closing:
 		return empty
 	var heading := v_rel.normalized() if v_rel.length_squared() > 1.0 else n
 	var tangent := Vector2(-n.y, n.x)
 	var cut := heading.x * n.y - heading.y * n.x
 	var m1 := 1.0
 	var m2 := orb.MASS
-	var restitution := 0.78
-	var impulse := (1.0 + restitution) * maxf(closing, 80.0) / ((1.0 / m1) + (1.0 / m2))
-	var new_vel := bvel - n * (impulse / m1) + tangent * (cut * closing * 0.22)
+	var restitution := t.carom_restitution
+	var impulse := (1.0 + restitution) * maxf(closing, t.carom_min_impulse_closing) / ((1.0 / m1) + (1.0 / m2))
+	var new_vel := bvel - n * (impulse / m1) + tangent * (cut * closing * t.carom_cut_transfer)
 	var spd := new_vel.length()
 	if spd < 1.0:
 		new_vel = -n * min_speed
 	else:
-		new_vel = new_vel.normalized() * clampf(spd, min_speed * 0.82, _speed_cap())
-	var english := clampf(cut * 1.55 + bspin * 0.18, -1.0, 1.0)
-	var orb_impulse := n * (impulse / m2) + tangent * (cut * impulse / m2 * 0.28)
+		new_vel = new_vel.normalized() * clampf(spd, min_speed * t.carom_speed_floor_scale, _speed_cap())
+	var english := clampf(cut * t.carom_english_cut + bspin * t.carom_english_spin, -1.0, 1.0)
+	var orb_impulse := n * (impulse / m2) + tangent * (cut * impulse / m2 * t.carom_orb_cut_share)
 	return {
 		"valid": true,
 		"n": n,
@@ -716,10 +742,10 @@ func preview_powerup_carom(orb: Powerup) -> Dictionary:
 	if a < 4.0:
 		return miss
 	var t := -w.dot(v) / a
-	if t < 0.0 or t > 1.35:
+	if t < 0.0 or t > tuning.carom_preview_time:
 		return miss
 	var closest := w + v * t
-	if closest.length() > radius + orb.RADIUS + 10.0:
+	if closest.length() > radius + orb.RADIUS + tuning.carom_preview_slack:
 		return miss
 	var at := global_position + velocity * t
 	var solved := resolve_carom(orb, at, velocity, spin)
@@ -747,8 +773,8 @@ func _handle_powerup_carom(orb: Powerup, collision: KinematicCollision2D = null)
 	velocity = solved["ball_vel"]
 	spin = solved["ball_spin"]
 	orb.apply_carom(solved["orb_impulse"], solved["n"])
-	global_position -= solved["n"] * 12.0
-	_squash = Vector2(0.7, 1.25)
+	global_position -= solved["n"] * tuning.carom_separation
+	_squash = tuning.squash_carom
 	var hit_pos := collision.get_position() if collision != null else global_position
 	if fluid_sim != null:
 		fluid_sim.inject_shockwave(hit_pos, solved["n"], 900.0, Color(1.0, 0.95, 0.7, 0.7))
@@ -758,23 +784,24 @@ func _handle_powerup_carom(orb: Powerup, collision: KinematicCollision2D = null)
 	if audio_mgr != null:
 		audio_mgr.trigger_impact(solved["closing"], hit_pos, false)
 	carom_hit.emit(solved["cut"], solved["ball_spin"])
-	if absf(solved["cut"]) > 0.32:
+	if absf(solved["cut"]) > tuning.carom_cut_callout:
 		emote(2, 0.3, "CUT")
 	else:
 		emote(2, 0.25, "KNOCK")
 
 func _handle_paddle_collision(paddle: Paddle, _normal: Vector2) -> void:
+	var t := tuning
 	var behind := false
 	if paddle.player_id == 0:
-		behind = global_position.x < paddle.global_position.x - 10.0
+		behind = global_position.x < paddle.global_position.x - t.behind_margin
 	else:
-		behind = global_position.x > paddle.global_position.x + 10.0
+		behind = global_position.x > paddle.global_position.x + t.behind_margin
 
 	# Ignore only when the ball is in front and already leaving. A backhand still counts.
 	if not behind:
-		if paddle.player_id == 0 and velocity.x > 40.0:
+		if paddle.player_id == 0 and velocity.x > t.leaving_speed_ignore:
 			return
-		elif paddle.player_id == 1 and velocity.x < -40.0:
+		elif paddle.player_id == 1 and velocity.x < -t.leaving_speed_ignore:
 			return
 
 	rally_hits += 1
@@ -782,69 +809,69 @@ func _handle_paddle_collision(paddle: Paddle, _normal: Vector2) -> void:
 	touch_mask |= (1 << paddle.player_id)
 	if paddle.player_id == 0:
 		_crossed_left = false
-		global_position.x = paddle.global_position.x + 36.0 if behind else maxf(global_position.x, paddle.global_position.x + 28.0)
+		global_position.x = paddle.global_position.x + t.contact_push_behind if behind else maxf(global_position.x, paddle.global_position.x + t.contact_push_front)
 	else:
 		_crossed_right = false
-		global_position.x = paddle.global_position.x - 36.0 if behind else minf(global_position.x, paddle.global_position.x - 28.0)
+		global_position.x = paddle.global_position.x - t.contact_push_behind if behind else minf(global_position.x, paddle.global_position.x - t.contact_push_front)
 
-	var hit_offset := clampf((global_position.y - paddle.global_position.y) / 70.0, -1.0, 1.0)
+	var hit_offset := clampf((global_position.y - paddle.global_position.y) / t.hit_offset_divisor, -1.0, 1.0)
 	var forward_dir := Vector2.RIGHT if paddle.player_id == 0 else Vector2.LEFT
 	var out_dir := forward_dir
 
 	# Paddle Shape Mutator Deflections
 	if paddle.shape_type == Paddle.Shape.SCOOP:
-		hit_offset *= 0.32
-		out_dir.y = hit_offset * 0.7
+		hit_offset *= t.out_angle_scoop_offset_scale
+		out_dir.y = hit_offset * t.out_angle_scoop
 	elif paddle.shape_type == Paddle.Shape.WEDGE:
 		var sgn := signf(hit_offset) if absf(hit_offset) > 0.05 else (1.0 if randf() > 0.5 else -1.0)
-		out_dir.y = sgn * (0.82 + absf(hit_offset) * 0.35)
+		out_dir.y = sgn * (t.out_angle_wedge_base + absf(hit_offset) * t.out_angle_wedge_offset)
 	elif paddle.shape_type == Paddle.Shape.FORK:
-		if absf(hit_offset) < 0.28:
+		if absf(hit_offset) < t.fork_center_threshold:
 			out_dir.y = 0.0
 		else:
-			out_dir.y = signf(hit_offset) * 0.95
+			out_dir.y = signf(hit_offset) * t.out_angle_fork
 	else:
-		out_dir.y = hit_offset * 0.95
+		out_dir.y = hit_offset * t.out_angle_standard
 
 	var pvel := paddle.hit_velocity()
-	out_dir += pvel * 0.0009
+	out_dir += pvel * t.paddle_velocity_influence
 	out_dir = out_dir.normalized()
 
 	var incoming := maxf(velocity.length(), min_speed)
-	var speed_boost := 1.045 + minf(rally_hits * 0.012, 0.22)
+	var speed_boost := t.speed_boost_base + minf(rally_hits * t.speed_boost_per_hit, t.speed_boost_rally_cap)
 	if is_in_overdrive:
-		speed_boost += 0.03
+		speed_boost += t.speed_boost_overdrive
 	if is_in_cymatic_lock:
-		speed_boost += 0.05
+		speed_boost += t.speed_boost_lock
 	if paddle.shape_type == Paddle.Shape.SCOOP:
-		speed_boost += 0.08
+		speed_boost += t.speed_boost_scoop
 	elif paddle.shape_type == Paddle.Shape.FORTRESS:
-		speed_boost += 0.18
-	elif paddle.shape_type == Paddle.Shape.FORK and absf(hit_offset) < 0.28:
-		speed_boost += 0.25
+		speed_boost += t.speed_boost_fortress
+	elif paddle.shape_type == Paddle.Shape.FORK and absf(hit_offset) < t.fork_center_threshold:
+		speed_boost += t.speed_boost_fork_center
 
 	var perfect := paddle.consume_parry()
 	last_hit_was_perfect = perfect
 	if perfect:
-		speed_boost += 0.22
-		spin = clampf(-hit_offset * 1.45 + pvel.y * 0.0045, -1.0, 1.0)
+		speed_boost += t.speed_boost_perfect
+		spin = clampf(-hit_offset * t.spin_offset_perfect + pvel.y * t.spin_paddle_vel_perfect, -1.0, 1.0)
 	else:
-		spin = clampf(-hit_offset * 1.12 + pvel.y * 0.003, -1.0, 1.0)
+		spin = clampf(-hit_offset * t.spin_offset_normal + pvel.y * t.spin_paddle_vel_normal, -1.0, 1.0)
 
-	var bonus_flat := 48.0
+	var bonus_flat := t.bonus_flat
 	if paddle.shape_type == Paddle.Shape.FORTRESS:
-		bonus_flat += 280.0
+		bonus_flat += t.bonus_flat_fortress
 	var out_speed := minf(incoming * speed_boost + bonus_flat, _speed_cap())
 	velocity = out_dir * out_speed
 	last_hit_speed = out_speed
-	_squash = Vector2(0.55, 1.45)
+	_squash = t.squash_paddle_hit
 
 	if fluid_sim != null:
-		var wave_power := 2200.0 if perfect else 1600.0
+		var wave_power := t.hit_wave_power_perfect if perfect else t.hit_wave_power
 		if paddle.shape_type == Paddle.Shape.FORTRESS:
-			wave_power += 1400.0
+			wave_power += t.hit_wave_power_fortress
 		fluid_sim.inject_shockwave(global_position, out_dir, wave_power, paddle.team_color)
-		fluid_sim.inject_vortex(global_position, spin * 6.5, 96.0, paddle.team_color)
+		fluid_sim.inject_vortex(global_position, spin * t.hit_vortex_strength, t.hit_vortex_radius, paddle.team_color)
 
 	if vfx_mgr != null:
 		if perfect:
@@ -853,9 +880,9 @@ func _handle_paddle_collision(paddle: Paddle, _normal: Vector2) -> void:
 			if game_mgr != null:
 				game_mgr.impact_pulse.emit(1.0)
 		else:
-			vfx_mgr.spawn_paddle_hit(global_position, out_dir, paddle.team_color, clampf(rally_hits * 0.08, 0.0, 1.0))
-		vfx_mgr.apply_camera_kick(out_dir, 0.9 if perfect else 0.45 + minf(rally_hits * 0.04, 0.4))
-		vfx_mgr.apply_hit_stop(0.055 if perfect else 0.028, 0.07 if perfect else 0.12)
+			vfx_mgr.spawn_paddle_hit(global_position, out_dir, paddle.team_color, clampf(rally_hits * t.hit_vfx_rally_scale, 0.0, 1.0))
+		vfx_mgr.apply_camera_kick(out_dir, t.hit_camera_kick_perfect if perfect else t.hit_camera_kick_base + minf(rally_hits * t.hit_camera_kick_per_hit, t.hit_camera_kick_rally_cap))
+		vfx_mgr.apply_hit_stop(t.hit_stop_perfect if perfect else t.hit_stop_normal, t.hit_stop_scale_perfect if perfect else t.hit_stop_scale_normal)
 
 	if audio_mgr != null:
 		if perfect:
@@ -871,23 +898,24 @@ func _handle_paddle_collision(paddle: Paddle, _normal: Vector2) -> void:
 	else:
 		emote(2, 0.4, "BAM")
 
-	if rally_hits == 7 and not is_in_overdrive:
+	if rally_hits == t.overdrive_rally_hits and not is_in_overdrive:
 		is_in_overdrive = true
 		overdrive_entered.emit()
 		emote(9, 1.4, "YEAH")
-	elif rally_hits == 11 and not is_in_cymatic_lock:
+	elif rally_hits == t.lock_rally_hits and not is_in_cymatic_lock:
 		is_in_cymatic_lock = true
 		cymatic_lock_entered.emit()
 		emote(9, 2.0, "LOCK")
 
 func _rally_speed_cap() -> float:
-	var cap := base_speed + 120.0 + float(rally_hits) * 85.0
+	var t := tuning
+	var cap := base_speed + t.cap_base_bonus + float(rally_hits) * t.cap_per_hit
 	if is_in_overdrive:
-		cap += 220.0
+		cap += t.cap_overdrive_bonus
 	if is_in_cymatic_lock:
-		cap += 380.0
+		cap += t.cap_lock_bonus
 	if fireball_time > 0.0:
-		cap += 280.0
+		cap += t.cap_fireball_bonus
 	return minf(cap, max_speed)
 
 ## Effective cap: rally cap normally, hard max during a blast/resonance override window.
@@ -925,23 +953,24 @@ func _process(delta: float) -> void:
 			_clear_trail()
 		return
 	# Same interpolation the renderer applies between physics ticks.
+	var t := tuning
 	var pos := _prev_tick_pos.lerp(_tick_pos, Engine.get_physics_interpolation_fraction())
-	var heat := 1.0 if is_in_cymatic_lock else (0.75 if is_in_overdrive else clampf((velocity.length() - 500.0) / 1100.0, 0.25, 1.0))
+	var heat := 1.0 if is_in_cymatic_lock else (t.trail_heat_overdrive if is_in_overdrive else clampf((velocity.length() - t.trail_heat_speed_ref) / t.trail_heat_speed_span, t.trail_heat_min, 1.0))
 	if fireball_time > 0.0:
 		heat = 1.0
-	var life := 0.30 if heat > 0.7 else 0.22
+	var life := t.trail_life_hot if heat > t.trail_hot_threshold else t.trail_life_cool
 	if is_clone:
-		life = 0.16
+		life = t.trail_life_clone
 	# Age existing samples (scaled delta, so hit-stop freezes the comet too).
 	for i in range(_trail_ages.size()):
 		_trail_ages[i] += delta
-	if _trail_pts.is_empty() or _trail_pts[0].distance_squared_to(pos) > 2.0:
+	if _trail_pts.is_empty() or _trail_pts[0].distance_squared_to(pos) > t.trail_min_step_sq:
 		_trail_pts.push_front(pos)
 		_trail_ages.push_front(0.0)
 	while not _trail_ages.is_empty() and _trail_ages[_trail_ages.size() - 1] > life:
 		_trail_ages.pop_back()
 		_trail_pts.pop_back()
-	var max_pts := 40
+	var max_pts := t.trail_max_points
 	if _trail_pts.size() > max_pts:
 		_trail_pts.resize(max_pts)
 		_trail_ages.resize(max_pts)
@@ -952,32 +981,33 @@ func _process(delta: float) -> void:
 		_trail.add_point(p)
 		if _trail_core:
 			_trail_core.add_point(p)
-	_trail.width = 30.0 + heat * 18.0
+	_trail.width = t.trail_width_base + heat * t.trail_width_heat
 	if _trail_core:
-		_trail_core.width = 8.0 + heat * 8.0
+		_trail_core.width = t.trail_core_width_base + heat * t.trail_core_width_heat
 	if _trail.material is ShaderMaterial:
 		(_trail.material as ShaderMaterial).set_shader_parameter("heat", heat)
 		(_trail.material as ShaderMaterial).set_shader_parameter("hot_color", Color(1.0, 1.0, 0.85) if fireball_time <= 0.0 else Color(1.0, 0.85, 0.35))
 		(_trail.material as ShaderMaterial).set_shader_parameter("cool_color", Color(1.0, 0.45, 0.08) if fireball_time > 0.0 else Color(1.0, 0.7, 0.15))
 	if _sparks:
-		_sparks.emitting = velocity.length() > 620.0
-		_sparks.amount = 18 if is_clone else 28
+		_sparks.emitting = velocity.length() > t.spark_speed_threshold
+		_sparks.amount = t.spark_amount_clone if is_clone else t.spark_amount
 		var back := -velocity.normalized()
 		if _sparks.process_material is ParticleProcessMaterial:
 			(_sparks.process_material as ParticleProcessMaterial).direction = Vector3(back.x, back.y, 0)
 			(_sparks.process_material as ParticleProcessMaterial).color = Color(1.0, 0.45, 0.08) if fireball_time > 0.0 else Color(1.0, 0.92, 0.5)
 
 func _spawn_afterimage(delta: float) -> void:
+	var t := tuning
 	_ghost_cd -= delta
-	if _ghost_cd > 0.0 or velocity.length() < 700.0:
+	if _ghost_cd > 0.0 or velocity.length() < t.afterimage_speed_threshold:
 		return
-	_ghost_cd = 0.045 if fireball_time > 0.0 else 0.07
+	_ghost_cd = t.afterimage_interval_fireball if fireball_time > 0.0 else t.afterimage_interval
 	if _ghost_shader == null:
 		_ghost_shader = load("res://shaders/vfx/afterimage.gdshader")
 	var ghost := ColorRect.new()
 	ghost.z_index = 9
 	ghost.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var sz := 64.0 if fireball_time > 0.0 else 56.0
+	var sz := t.afterimage_size_fireball if fireball_time > 0.0 else t.afterimage_size
 	ghost.size = Vector2(sz, sz)
 	ghost.pivot_offset = ghost.size * 0.5
 	ghost.global_position = global_position - ghost.pivot_offset
@@ -989,7 +1019,7 @@ func _spawn_afterimage(delta: float) -> void:
 	if is_in_cymatic_lock:
 		tint = Color(0.9, 0.95, 1.0)
 	mat.set_shader_parameter("tint", tint)
-	mat.set_shader_parameter("intensity", 1.1 if is_clone else 1.4)
+	mat.set_shader_parameter("intensity", t.afterimage_intensity_clone if is_clone else t.afterimage_intensity)
 	mat.set_shader_parameter("progress", 0.0)
 	ghost.material = mat
 	var parent := get_parent()
@@ -1001,8 +1031,8 @@ func _spawn_afterimage(delta: float) -> void:
 		tw.tween_method(func(v: float):
 			if is_instance_valid(ghost):
 				mat.set_shader_parameter("progress", v)
-		, 0.0, 1.0, 0.2)
-		tw.tween_property(ghost, "scale", _squash * 0.35, 0.2).set_ease(Tween.EASE_IN)
+		, 0.0, 1.0, t.afterimage_fade)
+		tw.tween_property(ghost, "scale", _squash * 0.35, t.afterimage_fade).set_ease(Tween.EASE_IN)
 		tw.chain().tween_callback(ghost.queue_free)
 
 func _update_visuals() -> void:

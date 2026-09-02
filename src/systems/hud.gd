@@ -4,6 +4,8 @@ extends CanvasLayer
 ## In-match HUD: scoreboard, momentum bars, one queued callout system, serve
 ## hint, controls help line, screen flash, and the match results overlay.
 
+## Fallback team colours; the live values come from `Settings.team_color()` so
+## the colourblind palettes reach every score, bar, label and callout.
 const P1_COLOR := Color(0.0, 0.898, 1.0)
 const P2_COLOR := Color(1.0, 0.0, 0.667)
 const GOLD := Color(1.0, 0.8, 0.0)
@@ -84,6 +86,108 @@ var _comet_ready: Array[float] = [0.0, 0.0]
 var _chip_tween: Tween
 var _score_tweens: Array[Tween] = [null, null]
 var _dot_tweens: Array[Tween] = [null, null, null]
+var _scale_root: UIScaleRoot
+## Boss stages paint the right side; remember so the palette pass does not undo it.
+var _p2_color_override := false
+
+func _ready() -> void:
+	_scale_root = UIScaleRoot.install(self)
+	_apply_ui_scale()
+	var st := _settings_autoload()
+	if st != null and not st.is_connected("changed", _on_setting_changed):
+		st.connect("changed", _on_setting_changed)
+	_apply_team_palette()
+
+# --- Accessibility ------------------------------------------------------------
+
+func _settings_autoload() -> Node:
+	if _settings_node == null or not is_instance_valid(_settings_node):
+		_settings_node = get_node_or_null("/root/Settings")
+	return _settings_node
+
+## Live team colour. Falls back to the hard-coded pair when Settings is absent
+## (script check runs, isolated tests).
+func team_color(player_id: int) -> Color:
+	var st := _settings_autoload()
+	if st != null and st.has_method("team_color"):
+		return st.call("team_color", player_id)
+	return P1_COLOR if player_id == 0 else P2_COLOR
+
+## Maps a caller-supplied colour onto the active palette when it is one of the
+## two default team hues; gold, white and boss colours pass through untouched.
+func _remap(c: Color) -> Color:
+	var st := _settings_autoload()
+	if st != null and st.has_method("remap_team_color"):
+		return st.call("remap_team_color", c)
+	return c
+
+func _on_setting_changed(key: String, _value: Variant) -> void:
+	match key:
+		"colorblind_mode":
+			_apply_team_palette()
+		"ui_scale":
+			_apply_ui_scale()
+
+func _apply_ui_scale() -> void:
+	if _scale_root == null:
+		return
+	_scale_root.set_ui_scale(float(_setting("ui_scale", 1.0)))
+
+## Push the palette into the shared theme so the 'TeamP1' / 'TeamP2' type
+## variations follow the colourblind mode for anyone who uses them.
+func _apply_theme_tokens(c1: Color, c2: Color) -> void:
+	# HUD is a CanvasLayer, so there is no local theme; the project theme is the
+	# one every Control here inherits.
+	var th := ThemeDB.get_project_theme()
+	if th == null:
+		return
+	th.set_color(&'font_color', &'TeamP1', c1)
+	th.set_color(&'font_color', &'TeamP2', c2)
+
+## Repaint every team-coloured HUD element from the current palette.
+func _apply_team_palette() -> void:
+	var c1 := team_color(0)
+	var c2 := team_color(1)
+	_apply_theme_tokens(c1, c2)
+	for pair in [[p1_score_label, c1], [p1_label, c1], [p1_ready, c1]]:
+		var l: Label = pair[0]
+		if l != null:
+			l.add_theme_color_override("font_color", pair[1])
+	if p1_ready != null:
+		p1_ready.add_theme_color_override("font_outline_color", Color(c1.r, c1.g, c1.b, 0.35))
+	if p2_score_label != null:
+		p2_score_label.add_theme_color_override("font_color", c2)
+	if not _p2_color_override:
+		for l2: Label in [p2_label, p2_ready]:
+			if l2 != null:
+				l2.add_theme_color_override("font_color", c2)
+		if p2_ready != null:
+			p2_ready.add_theme_color_override("font_outline_color", Color(c2.r, c2.g, c2.b, 0.35))
+	_tint_momentum(p1_momentum_bar, c1)
+	_tint_momentum(p2_momentum_bar, c2 if not _p2_color_override else _p2_current_color())
+	_tint_comet(p1_comet, c1)
+	_tint_comet(p2_comet, c2 if not _p2_color_override else _p2_current_color())
+
+func _p2_current_color() -> Color:
+	if p2_label != null:
+		return p2_label.get_theme_color("font_color")
+	return team_color(1)
+
+func _tint_momentum(bar: ProgressBar, col: Color) -> void:
+	if bar == null:
+		return
+	var sb := bar.get_theme_stylebox("fill")
+	if not (sb is StyleBoxFlat):
+		return
+	var flat: StyleBoxFlat = (sb as StyleBoxFlat).duplicate()
+	flat.bg_color = Color(col.r, col.g, col.b, 0.85)
+	flat.shadow_color = Color(col.r, col.g, col.b, 0.35)
+	bar.add_theme_stylebox_override("fill", flat)
+
+func _tint_comet(rect: ColorRect, col: Color) -> void:
+	if rect == null or not (rect.material is ShaderMaterial):
+		return
+	(rect.material as ShaderMaterial).set_shader_parameter("team_color", col)
 
 func setup(p_game_mgr: GameManager, p_p1: Paddle, p_p2: Paddle, p_tournament: TournamentManager = null) -> void:
 	game_mgr = p_game_mgr
@@ -362,7 +466,7 @@ func show_milestone(title: String) -> void:
 func show_callout(text: String, color: Color = GOLD, priority: int = PRIO_NORMAL, sub: String = "", hold: float = CALLOUT_HOLD) -> void:
 	var item := {
 		"text": text,
-		"color": color,
+		"color": _remap(color),
 		"priority": priority,
 		"sub": sub,
 		"hold": hold,
@@ -573,7 +677,7 @@ func _on_state_changed(new_state: int) -> void:
 func show_match_winner(winner_id: int) -> void:
 	var is_p1 := winner_id == 0
 	var winner_name := "PADD" if is_p1 else (p2_label.text if p2_label != null else "RIVAL")
-	var col := P1_COLOR if is_p1 else p2_label.get_theme_color("font_color")
+	var col := team_color(0) if is_p1 else p2_label.get_theme_color("font_color")
 	var sets1 := game_mgr.sets_p1 if game_mgr != null else 0
 	var sets2 := game_mgr.sets_p2 if game_mgr != null else 0
 	_result_action = "rematch"
@@ -674,14 +778,15 @@ func update_gauntlet_status(enabled: bool) -> void:
 	else:
 		if game_mgr != null:
 			_set_sets_text(game_mgr.sets_p1, game_mgr.sets_p2)
+		_p2_color_override = false
 		p2_label.text = "LIN"
-		p2_label.add_theme_color_override("font_color", P2_COLOR)
-		p2_ready.add_theme_color_override("font_color", P2_COLOR)
+		_apply_team_palette()
 
 # --- Tournament ---------------------------------------------------------------
 
 func _on_tournament_stage_started(stage_idx: int, info: Dictionary) -> void:
-	var col: Color = info.get("color", P2_COLOR)
+	var col: Color = info.get("color", team_color(1))
+	_p2_color_override = true
 	p2_label.text = info.get("boss_name", "BOSS")
 	p2_label.add_theme_color_override("font_color", col)
 	p2_ready.add_theme_color_override("font_color", col)
@@ -693,7 +798,7 @@ func _on_tournament_stage_completed(stage_idx: int, info: Dictionary) -> void:
 	var total := TournamentManager.STAGES.size()
 	if stage_idx + 1 < total:
 		_result_action = "rematch"
-		_show_results("STAGE %d / %d CLEARED" % [stage_idx + 1, total], "PADD", P1_COLOR,
+		_show_results("STAGE %d / %d CLEARED" % [stage_idx + 1, total], "PADD", team_color(0),
 			"%s DEFEATED" % String(info.get("boss_name", "BOSS")).to_upper(),
 			"NEXT: %s" % String(TournamentManager.STAGES[stage_idx + 1].get("boss_name", "???")).to_upper(),
 			"", true)
@@ -706,7 +811,7 @@ func _on_tournament_won() -> void:
 func _on_tournament_lost() -> void:
 	_result_action = "retry"
 	var boss := p2_label.text if p2_label != null else "RIVAL"
-	var col := p2_label.get_theme_color("font_color") if p2_label != null else P2_COLOR
+	var col := p2_label.get_theme_color("font_color") if p2_label != null else team_color(1)
 	var stg := (tournament_mgr.current_stage + 1) if tournament_mgr != null else 1
 	_show_results("DEFEATED IN THE GAUNTLET", boss, col, "HOLDS STAGE %d" % stg,
 		"SETS  %d - %d" % [game_mgr.sets_p1 if game_mgr else 0, game_mgr.sets_p2 if game_mgr else 0], "RETRY STAGE", false)
@@ -750,10 +855,10 @@ func _on_match_reset() -> void:
 		_serve_tween.kill()
 
 func _on_flash(color: Color, alpha: float, duration: float) -> void:
+	# VFXManager owns the reduce-motion softening and the per-second flash cap;
+	# this stays as a backstop for anything that emits `flash_requested` directly.
 	if not bool(_setting("screen_flash", true)):
 		return
-	if _reduce_motion():
-		alpha *= 0.4
 	if _flash_tween != null and _flash_tween.is_valid():
 		_flash_tween.kill()
 	flash_rect.color = Color(color.r, color.g, color.b, alpha)

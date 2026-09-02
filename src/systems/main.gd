@@ -85,6 +85,8 @@ func _ready() -> void:
 		_display_mat = fluid_display.material
 		if fluid_sim != null:
 			_display_mat.set_shader_parameter("sim_texel", fluid_sim.get_sim_texel_size())
+			fluid_sim.grid_changed.connect(_on_fluid_grid_changed)
+	_apply_fluid_display_scale()
 	_goal_glow_left = arena.get_node_or_null("GoalGlowLeft") as ColorRect
 	_goal_glow_right = arena.get_node_or_null("GoalGlowRight") as ColorRect
 	_update_display_texture()
@@ -231,6 +233,26 @@ func _start_lab(watch: bool) -> void:
 	game_mgr.start_lab_match()
 	if watch:
 		game_mgr.callout.emit("LAB: AI vs AI", Color(1.0, 0.9, 0.4))
+
+func _on_fluid_grid_changed(texel_size: Vector2) -> void:
+	if _display_mat != null:
+		_display_mat.set_shader_parameter("sim_texel", texel_size)
+		if fluid_sim != null:
+			var vel_tex: Texture2D = fluid_sim.get_velocity_texture()
+			if vel_tex != null:
+				_display_mat.set_shader_parameter("velocity_tex", vel_tex)
+	_apply_fluid_display_scale()
+
+## The dye texture is the sim grid, so the sprite has to be scaled to cover the
+## 1920x1080 arena. The scene stores the scale for a 256x144 grid; any other
+## quality preset needs it recomputed or the field covers the wrong area.
+func _apply_fluid_display_scale() -> void:
+	if fluid_display == null or fluid_sim == null:
+		return
+	var grid: Vector2i = fluid_sim.grid_size
+	if grid.x <= 0 or grid.y <= 0:
+		return
+	fluid_display.scale = Vector2(1920.0 / float(grid.x), 1080.0 / float(grid.y))
 
 func _update_display_texture() -> void:
 	if fluid_display != null and fluid_sim != null:

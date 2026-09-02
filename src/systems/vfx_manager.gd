@@ -5,9 +5,14 @@ signal flash_requested(color: Color, alpha: float, duration: float)
 
 @export var camera: Camera2D
 
-## Halves shake / zoom punch, halves particle counts and disables screen flash. Set by settings.
+## Halves shake / zoom punch and particle counts, softens flashes and hit-stop.
+## Pushed by MenuManager and re-read from Settings on `changed`.
 var reduce_motion := false
+## 0..1 user slider on top of `reduce_motion`. 0 disables camera shake entirely.
+var shake_scale := 1.0
 var time_ctrl: TimeController
+## Owned here so no edit to main.gd is needed; GameManager binds it to a match.
+var haptics: Haptics
 
 const MAX_SHAKE_OFFSET := 34.0
 const MAX_SHAKE_ROT := 0.028
@@ -16,6 +21,10 @@ const TRAUMA_DECAY := 2.1 # 1.0 -> 0.0 in ~0.48 s
 const MAX_LIVE_RINGS := 6
 const GOAL_SLOWMO_SCALE := 0.3
 const GOAL_SLOWMO_TIME := 0.45
+## Photosensitivity guard: at most this many full-screen flashes per second,
+## so a brick volley or a multiball scramble cannot strobe.
+const MAX_FLASHES_PER_SEC := 3
+const FLASH_WINDOW := 1.0
 
 var trauma := 0.0
 var _kick := Vector2.ZERO
@@ -34,6 +43,9 @@ var _live_rings := 0
 var _goal_focus_pos := Vector2(960, 540)
 var _goal_focus_t := 0.0
 var _goal_focus_total := 0.0
+## Rolling window of recent flash timestamps (msec) for the rate cap.
+var _flash_times: Array[int] = []
+var _settings_node: Node
 
 # Generated particle textures, shared across spawns.
 var _streak_tex: Texture2D
@@ -51,6 +63,41 @@ func _ready() -> void:
 	_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	_noise.frequency = 1.0
 	_noise.seed = 1337
+	haptics = Haptics.new()
+	haptics.name = "Haptics"
+	add_child(haptics)
+	_read_accessibility_settings()
+	var s := _settings()
+	if s != null and not s.is_connected("changed", _on_setting_changed):
+		s.connect("changed", _on_setting_changed)
+
+# --- Accessibility settings ----------------------------------------------------
+
+func _settings() -> Node:
+	if _settings_node == null or not is_instance_valid(_settings_node):
+		_settings_node = get_node_or_null("/root/Settings")
+	return _settings_node
+
+func _setting(key: String, default: Variant) -> Variant:
+	var s := _settings()
+	if s == null:
+		return default
+	return s.call("get_value", key, default)
+
+func _read_accessibility_settings() -> void:
+	reduce_motion = bool(_setting("reduce_motion", false))
+	shake_scale = clampf(float(_setting("screen_shake", 1.0)), 0.0, 1.0)
+
+func _on_setting_changed(key: String, value: Variant) -> void:
+	match key:
+		"reduce_motion":
+			reduce_motion = bool(value)
+		"screen_shake":
+			shake_scale = clampf(float(value), 0.0, 1.0)
+
+## Combined motion multiplier: the user slider, halved again by reduce motion.
+func _motion_scale() -> float:
+	return shake_scale * (0.5 if reduce_motion else 1.0)
 
 func _process(delta: float) -> void:
 	# Shake and kick decay in real time so hit-stop does not freeze the camera mid-shake.
@@ -65,7 +112,7 @@ func _process(delta: float) -> void:
 	if camera == null:
 		return
 	var shake := trauma * trauma
-	var motion_mult := 0.5 if reduce_motion else 1.0
+	var motion_mult := _motion_scale()
 	var jitter := Vector2.ZERO
 	var rot := 0.0
 	if shake > 0.001:
@@ -406,7 +453,10 @@ func goal_focus_weight() -> float:
 	if _goal_focus_t <= 0.0 or _goal_focus_total <= 0.0:
 		return 0.0
 	var p := 1.0 - _goal_focus_t / _goal_focus_total
-	return clampf(minf(p / 0.18, 1.0) * minf((1.0 - p) / 0.45, 1.0), 0.0, 1.0)
+	var w := clampf(minf(p / 0.18, 1.0) * minf((1.0 - p) / 0.45, 1.0), 0.0, 1.0)
+	# Reduce motion halves the camera push and zoom-out; the slow-motion beat
+	# and the goal VFX stay, so the moment still reads.
+	return w * (0.5 if reduce_motion else 1.0)
 
 func goal_focus_pos() -> Vector2:
 	return _goal_focus_pos
@@ -462,7 +512,7 @@ func _goal_sequence(ball: Node, side: int, color: Color) -> void:
 	spawn_goal_wall_pulse(side, pos.y, color)
 	spawn_hit_burst(line_pos, color, 2.4, vel, 1.8, 0.3)
 	request_goal_focus(line_pos, 0.5)
-	add_trauma(0.55, 0.8)
+	add_trauma(0.55 * maxf(_motion_scale(), 0.35), 0.8)
 	flash_screen(color, 0.24, 0.2)
 	var timer := tree.create_timer(GOAL_SLOWMO_TIME, false, false, true)
 	await timer.timeout
@@ -583,9 +633,9 @@ func add_trauma(amount: float, per_source_cap: float = 0.75) -> void:
 func apply_camera_kick(direction: Vector2, strength: float) -> void:
 	add_trauma(clampf(strength * 0.26, 0.0, 0.6), clampf(0.3 + strength * 0.25, 0.3, 0.9))
 	if direction.length() > 0.01:
-		_kick += direction.normalized() * (strength * 22.0)
+		_kick += direction.normalized() * (strength * 22.0 * _motion_scale())
 		_kick = _kick.limit_length(42.0)
-	_zoom_punch = maxf(_zoom_punch, strength * 0.045 * (0.5 if reduce_motion else 1.0))
+	_zoom_punch = maxf(_zoom_punch, strength * 0.045 * _motion_scale())
 
 func add_kick(direction: Vector2, strength: float) -> void:
 	apply_camera_kick(direction, strength)
@@ -599,6 +649,11 @@ func apply_hit_stop(real_duration: float, scale: float = 0.12) -> void:
 	_hitstop_id += 1
 	var id := _hitstop_id
 	var s := clampf(scale, 0.04, 1.0)
+	if reduce_motion:
+		# Halve the freeze and keep time closer to normal: the read stays, the
+		# lurch does not.
+		real_duration *= 0.5
+		s = clampf(lerpf(s, 1.0, 0.5), 0.04, 1.0)
 	if time_ctrl != null:
 		var existing := time_ctrl.source_scale(&"hitstop")
 		if existing >= 0.0:
@@ -617,10 +672,30 @@ func apply_hit_stop(real_duration: float, scale: float = 0.12) -> void:
 			Engine.time_scale = 1.0
 	)
 
+## Full-screen flash. Reduce motion keeps the cue but drops it to a soft, longer
+## wash instead of a hard pop, and the rate cap drops anything past
+## `MAX_FLASHES_PER_SEC` so repeated impacts cannot strobe.
 func flash_screen(color: Color, alpha: float, duration: float) -> void:
-	if reduce_motion:
+	if not bool(_setting("screen_flash", true)):
 		return
-	flash_requested.emit(color, alpha, duration)
+	var a := alpha
+	var d := duration
+	if reduce_motion:
+		a *= 0.3
+		d = maxf(d * 1.5, 0.2)
+	if not _allow_flash():
+		return
+	flash_requested.emit(color, a, d)
+
+func _allow_flash() -> bool:
+	var now := Time.get_ticks_msec()
+	var cutoff := now - int(FLASH_WINDOW * 1000.0)
+	while not _flash_times.is_empty() and _flash_times[0] < cutoff:
+		_flash_times.pop_front()
+	if _flash_times.size() >= MAX_FLASHES_PER_SEC:
+		return false
+	_flash_times.append(now)
+	return true
 
 func get_zoom_punch() -> float:
 	return _zoom_punch

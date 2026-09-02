@@ -15,6 +15,7 @@ with the default "Detect From WAV" mode) and are also flagged in the .import.
 """
 from __future__ import annotations
 
+import io
 import os
 import re
 import struct
@@ -238,8 +239,44 @@ def write_wav(name: str, x: np.ndarray, loop: bool = False, loop_begin: int = 0,
     body = b"WAVE" + b"".join(chunks)
     with open(os.path.join(out_dir, name + ".wav"), "wb") as f:
         f.write(b"RIFF" + struct.pack("<I", len(body)) + body)
-    if loop or compress is not None:
-        patch_import(os.path.join(out_dir, name + ".wav.import"), loop_begin, compress)
+    patch_import(os.path.join(out_dir, name + ".wav.import"), loop_begin, compress)
+
+
+# Written when no .import exists yet. Godot fills in [remap]/uid on first
+# import and keeps these [params], so the first import already uses the
+# settings we want. Without this, the first import on a fresh clone or in
+# CI silently applies the engine defaults (QOA compression), which desyncs
+# the music stems and disables the synth soundtrack.
+_IMPORT_TEMPLATE = """[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+
+[deps]
+
+source_file="res://{res_path}"
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode={loop_mode}
+edit/loop_begin={loop_begin}
+edit/loop_end=-1
+compress/mode={compress}
+"""
+
+
+def _res_path(path: str) -> str:
+    """res:// path of the .wav an .import sits beside, relative to the project."""
+    wav = path[: -len(".import")] if path.endswith(".import") else path
+    wav = os.path.abspath(wav).replace(os.sep, "/")
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..")).replace(os.sep, "/")
+    return wav[len(root) + 1 :] if wav.startswith(root + "/") else os.path.basename(wav)
 
 
 def patch_import(path: str, loop_begin: int = 0, compress: int | None = None) -> bool:
@@ -247,7 +284,16 @@ def patch_import(path: str, loop_begin: int = 0, compress: int | None = None) ->
     or a headless `--import`).  The `smpl` chunk already covers "Detect From
     WAV"; this pins it so a re-import with different defaults cannot lose it."""
     if not os.path.exists(path):
-        return False
+        with io.open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(
+                _IMPORT_TEMPLATE.format(
+                    res_path=_res_path(path),
+                    loop_mode=2,
+                    loop_begin=int(loop_begin),
+                    compress=0 if compress is None else int(compress),
+                )
+            )
+        return True
     with open(path, "r", encoding="utf-8") as f:
         txt = f.read()
     new = txt
