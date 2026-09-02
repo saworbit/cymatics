@@ -102,8 +102,9 @@ func on_ball_hit(ball: Ball, hit_normal: Vector2) -> void:
 		fluid_sim.inject_dye(global_position, brick_color, 90.0)
 
 	if vfx_mgr != null:
-		vfx_mgr.spawn_hit_burst(global_position, brick_color, 1.4)
-		vfx_mgr.spawn_shockwave(global_position, brick_color, 160.0, 0.2)
+		# Chips fly off the struck face; a thin crack flash lies along it.
+		var face_pos := global_position + Vector2(hit_normal.x * brick_size.x, hit_normal.y * brick_size.y) * 0.5
+		vfx_mgr.spawn_brick_chips(face_pos, hit_normal, brick_color)
 		vfx_mgr.apply_camera_kick(hit_normal, 0.3)
 
 	if audio_mgr != null:
@@ -118,9 +119,9 @@ func on_ball_hit(ball: Ball, hit_normal: Vector2) -> void:
 func _shatter(breaker_id: int) -> void:
 	destroyed.emit(self, breaker_id, global_position)
 	if vfx_mgr != null:
-		vfx_mgr.spawn_hit_burst(global_position, Color.WHITE, 2.6)
+		# Spinning shard quads with drag, plus the ring; the dye splash below stays.
+		vfx_mgr.spawn_brick_shards(global_position, brick_size, brick_color, 16)
 		vfx_mgr.spawn_shockwave(global_position, brick_color, 320.0, 0.35)
-		vfx_mgr.flash_screen(brick_color, 0.15, 0.08)
 
 	if fluid_sim != null:
 		fluid_sim.inject_shockwave(global_position, Vector2.UP, 3600.0, brick_color)

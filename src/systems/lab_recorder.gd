@@ -27,6 +27,9 @@ var _caroms := 0
 var _collects := 0
 var _stucks := 0
 var _aces := 0
+var _captures := 0
+var _slingshots := 0
+var _charged_blasts := 0
 var _started_unix := 0
 var _last_points := 0
 
@@ -72,6 +75,26 @@ func _hook() -> void:
 		ball.near_miss.connect(func(side: int, _p: Vector2): emit_event("near_miss", {"side": side}))
 	if chaos != null and chaos.has_signal("powerup_collected"):
 		chaos.powerup_collected.connect(_on_collect)
+	for p in [paddle_left, paddle_right]:
+		if p == null:
+			continue
+		var pid: int = p.player_id
+		if p.has_signal("suck_captured"):
+			p.suck_captured.connect(func(pos: Vector2):
+				_captures += 1
+				emit_event("capture", {"player": pid, "x": pos.x, "y": pos.y, "ball_speed": ball.velocity.length() if ball else 0.0})
+			)
+		if p.has_signal("slingshot_fired"):
+			p.slingshot_fired.connect(func(pos: Vector2, spd: float):
+				_slingshots += 1
+				emit_event("slingshot", {"player": pid, "x": pos.x, "y": pos.y, "speed": spd, "hold": p.get("last_capture_hold")})
+			)
+		if p.has_signal("blast_charge_released"):
+			p.blast_charge_released.connect(func(pos: Vector2, power: float):
+				if power > 0.4:
+					_charged_blasts += 1
+				emit_event("blast", {"player": pid, "x": pos.x, "y": pos.y, "power": power})
+			)
 
 func _physics_process(delta: float) -> void:
 	_t += delta
@@ -201,13 +224,15 @@ func _on_score(s1: int, s2: int) -> void:
 	_last_points = n
 	_points += 1
 	_goals += 1
-	_rallies.append(float(_current_rally_hits))
+	# GameManager zeroes rally_updated before score_updated; the ball still holds the count.
+	var hits_at_goal: int = ball.rally_hits if ball != null else _current_rally_hits
+	_rallies.append(float(hits_at_goal))
 	var ace := ball != null and ball.rally_hits <= 1
 	if ace:
 		_aces += 1
 	emit_event("goal", {
 		"score": [s1, s2],
-		"rally_hits": _current_rally_hits,
+		"rally_hits": hits_at_goal,
 		"ace": ace,
 		"spin": ball.spin if ball else 0.0,
 		"ball": _ball_snap(),
@@ -251,6 +276,9 @@ func _finish(reason: String) -> void:
 		"points": _points,
 		"goals": _goals,
 		"aces": _aces,
+		"captures": _captures,
+		"slingshots": _slingshots,
+		"charged_blasts": _charged_blasts,
 		"caroms": _caroms,
 		"collects": _collects,
 		"stuck_behind": _stucks,

@@ -4,6 +4,8 @@ uniform vec4 core_color : source_color = vec4(1.0, 1.0, 1.0, 1.0);
 uniform vec4 glow_color : source_color = vec4(0.0, 0.9, 1.0, 1.0);
 uniform float ready_factor : hint_range(0.0, 1.0) = 0.0;
 uniform float action_factor : hint_range(0.0, 1.0) = 0.0;
+// Blast charge 0..1: rim glow pulses brighter and faster, body contracts slightly.
+uniform float charge : hint_range(0.0, 1.0) = 0.0;
 uniform float time_pulse : hint_range(0.0, 100.0) = 0.0;
 uniform int shape_type : hint_range(0, 4) = 0; // 0=Standard, 1=Scoop, 2=Wedge, 3=Fork, 4=Fortress
 uniform float flip : hint_range(0.0, 1.0) = 0.0;
@@ -13,6 +15,8 @@ void fragment() {
 	if (flip > 0.5) {
 		p.x = -p.x;
 	}
+	// Charge contraction: the body pulls in toward its core (up to 6%).
+	p *= 1.0 + charge * 0.06;
 
 	float sdf = 0.0;
 	if (shape_type == 1) {
@@ -44,15 +48,20 @@ void fragment() {
 
 	float body = smoothstep(0.08, -0.02, sdf);
 	float rim = smoothstep(0.14, 0.02, sdf) * (1.0 - body);
-	float glow = exp(-max(sdf, 0.0) * 9.0);
+	float glow = exp(-max(sdf, 0.0) * (9.0 - charge * 3.0));
 
 	float pulse = 0.55 + 0.45 * sin(time_pulse * 9.0);
+	// Charge pulse: quicker and hotter as the hold lengthens.
+	float charge_pulse = 0.5 + 0.5 * sin(time_pulse * (14.0 + charge * 22.0));
 	vec3 col = mix(glow_color.rgb, core_color.rgb, body);
-	col += glow_color.rgb * rim * 1.3;
-	col += glow_color.rgb * glow * (0.35 + action_factor * 0.7);
+	col += glow_color.rgb * rim * (1.3 + charge * 1.6 * charge_pulse);
+	col += glow_color.rgb * glow * (0.35 + action_factor * 0.7 + charge * 0.9);
 	col += vec3(1.0, 0.92, 0.45) * ready_factor * pulse * (0.45 + glow);
+	// Front edge (p.x > 0) whitens toward full charge.
+	float front = smoothstep(0.0, 0.3, p.x) * charge;
+	col += vec3(1.0, 1.0, 1.0) * front * rim * 1.2 * charge_pulse;
 
-	float alpha = max(body, max(rim * 0.85, glow * 0.65));
+	float alpha = max(body, max(rim * 0.85, glow * (0.65 + charge * 0.2)));
 	if (alpha < 0.03) {
 		discard;
 	}

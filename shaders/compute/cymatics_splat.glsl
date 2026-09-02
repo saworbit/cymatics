@@ -11,12 +11,14 @@ layout(set = 0, binding = 3, rgba16f) uniform writeonly image2D dye_write;
 layout(push_constant, std430) uniform SplatParams {
     vec2 point;
     vec2 force;
-    vec4 color;
+    vec4 color;      // rgb = dye colour, a = opacity weight (0..1)
     float radius;
     float strength;
-    float mode; // 0 = jet, 1 = vortex, 2 = sink
-    float pad;
+    float mode;      // 0 = jet, 1 = vortex, 2 = sink
+    float dye_gain;  // global multiplier on dye deposition
 } splat;
+
+const float DYE_CAP = 1.6;
 
 void main() {
     ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
@@ -51,8 +53,13 @@ void main() {
     }
     imageStore(velocity_write, coord, vec4(vel, 0.0, 0.0));
 
+    // Dye deposition: alpha is an opacity weight, and a global gain keeps the
+    // field from saturating when several emitters run every frame. The cap is
+    // soft so bright cores compress instead of flat-topping to white.
     vec4 dye = imageLoad(dye_read, coord);
-    dye += splat.color * influence;
-    dye = min(dye, vec4(1.8, 1.8, 1.8, 1.0));
+    float deposit = influence * splat.color.a * splat.dye_gain;
+    dye.rgb += splat.color.rgb * deposit;
+    dye.rgb = dye.rgb / (1.0 + max(dye.rgb - DYE_CAP, vec3(0.0)) * 0.5);
+    dye.a = min(dye.a + splat.color.a * influence, 1.0);
     imageStore(dye_write, coord, dye);
 }

@@ -9,7 +9,7 @@ void fragment() {
 	float falloff = pow(1.0 - uv.x, 1.4);
 	float core = smoothstep(0.18, 0.0, abs(uv.y - 0.5));
 	float glow = shaft * falloff * intensity;
-	vec3 col = mix(beam_color.rgb, vec3(1.0), core * 0.65);
+	vec3 col = mix(beam_color.rgb, mix(beam_color.rgb, vec3(1.0), 0.45), core * 0.6);
 	float alpha = clamp(glow + core * falloff, 0.0, 1.0);
 	if (alpha < 0.02) {
 		discard;

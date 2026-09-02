@@ -12,11 +12,12 @@ void fragment() {
 	float along = UV.x;
 	float core = exp(-across * across * 14.0);
 	float sheet = exp(-across * across * 4.5) * 0.55;
-	float scroll = abs(sin((along * 18.0 - TIME * 14.0) * 3.14159));
+	float scroll = abs(sin((along * 18.0 + TIME * 14.0) * 3.14159));
 	float filaments = pow(scroll, 3.0) * (1.0 - across) * streak;
 	vec3 col = mix(cool_color.rgb, hot_color.rgb, core);
 	col = mix(col, hot_color.rgb, filaments);
 	col *= 1.2 + heat * 1.4;
-	float alpha = clamp(max(core, sheet) * (0.25 + along * 0.85), 0.0, 1.0);
+	float head = 1.0 - along;
+	float alpha = clamp(max(core, sheet) * (0.15 + head * head * 0.95), 0.0, 1.0);
 	COLOR = vec4(col, alpha);
 }

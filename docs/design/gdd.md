@@ -1,5 +1,7 @@
 # CYMATICS — Game Design Document
 
+> **Status (2026-09-02):** sections on 2v2, online play, Switch/Mobile, deterministic physics, and monetisation are **aspirational**. Implemented today: 1v1 arcade vs AI, local 2P, five-stage Gauntlet, Zen fluid lab, shapeshifting mutators and powerups, AI-vs-AI lab. See [`docs/POLISH_PLAN.md`](../POLISH_PLAN.md).
+
 > **Version:** 2.1  
 > **Date:** 2026-08-29  
 > **Engine:** Godot 4.7.2+ (with optional Rapier2D Deterministic Physics Server)  

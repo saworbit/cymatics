@@ -1,5 +1,7 @@
 # CYMATICS — Scripting API Reference
 
+> **Status (2026-09-02): planned, not implemented.** No public API, autoload `RollbackManager`, or modding surface exists yet. Treat everything below as a proposal.
+
 > **Version:** 2.1  
 > **Date:** 2026-08-29  
 > **Engine:** Godot 4.7.2+  

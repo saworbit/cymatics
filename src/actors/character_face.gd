@@ -19,6 +19,9 @@ var _flip := 0.0
 var _rect: ColorRect
 var _mat: ShaderMaterial
 var _bark: Label
+var _squint := 0.0
+var _squint_cd := 0.0
+var _ball_ref: Node2D
 
 func setup(size: Vector2, flip: bool, base_lid: float = 0.0) -> void:
 	_flip = 1.0 if flip else 0.0
@@ -89,6 +92,7 @@ func _process(delta: float) -> void:
 	_blink = move_toward(_blink, 0.0, delta * 9.0)
 
 	_apply_mood_targets()
+	_update_squint(delta)
 	_look = _look.lerp(_look_target, clampf(delta * 10.0, 0.0, 1.0))
 	if _mat == null:
 		return
@@ -100,6 +104,27 @@ func _process(delta: float) -> void:
 	_mat.set_shader_parameter("dizzy", _dizzy)
 	_mat.set_shader_parameter("blush", _blush)
 	_mat.set_shader_parameter("flip", _flip)
+
+## Squint when the ball is fast and close. Cheap: the ball lookup is cached
+## and refreshed every few hundred ms; the rest is one distance check.
+func _update_squint(delta: float) -> void:
+	_squint_cd -= delta
+	if _squint_cd <= 0.0:
+		_squint_cd = 0.4
+		if _ball_ref == null or not is_instance_valid(_ball_ref):
+			_ball_ref = get_tree().get_first_node_in_group("cymatics_balls") as Node2D
+	var want := 0.0
+	if _ball_ref != null and is_instance_valid(_ball_ref) and _ball_ref.is_inside_tree():
+		var vel: Variant = _ball_ref.get("velocity")
+		if vel is Vector2:
+			var speed: float = (vel as Vector2).length()
+			var dist := global_position.distance_to(_ball_ref.global_position)
+			if speed > 900.0 and dist < 420.0:
+				want = clampf((speed - 900.0) / 1100.0, 0.0, 1.0) * clampf(1.0 - dist / 420.0, 0.0, 1.0)
+	_squint = move_toward(_squint, want, delta * 6.0)
+	if _squint > 0.01 and mood != Mood.SHOCK and mood != Mood.SCARE and mood != Mood.DIZZY:
+		_lid = minf(_lid + _squint * 0.4, 0.75)
+		_brow = minf(_brow, -0.3 * _squint) if _brow > -0.3 else _brow
 
 func _apply_mood_targets() -> void:
 	_dizzy = 0.0
